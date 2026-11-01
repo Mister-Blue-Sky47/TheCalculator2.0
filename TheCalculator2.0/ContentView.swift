@@ -40,7 +40,7 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 8) {
             
-            // 1. MODUS SELECTION (Eigene saubere Zeile - KEINE Überlappung mehr!)
+            // 1. MODUS SELECTION
             HStack {
                 Text("Modus:")
                     .font(.subheadline)
@@ -175,39 +175,59 @@ struct ContentView: View {
         .padding(.horizontal)
     }
     
-    // MARK: - Scientific Tastatur Grid (Gleichmäßig proportionierte Tasten)
+    // MARK: - Scientific Tastatur Grid (Kompakte quadratische Blöcke oben)
     private var scientificCalculatorGrid: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 6) {
-                calcButton("sin", color: .purple) { applyScientificFunc("sin") }
-                calcButton("cos", color: .purple) { applyScientificFunc("cos") }
-                calcButton("tan", color: .purple) { applyScientificFunc("tan") }
-                calcButton("asin", color: .purple) { applyScientificFunc("asin") }
-                calcButton("acos", color: .purple) { applyScientificFunc("acos") }
+        VStack(spacing: 8) {
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    squareScientificButton("sin") { applyScientificFunc("sin") }
+                    squareScientificButton("cos") { applyScientificFunc("cos") }
+                    squareScientificButton("tan") { applyScientificFunc("tan") }
+                    squareScientificButton("asin") { applyScientificFunc("asin") }
+                    squareScientificButton("acos") { applyScientificFunc("acos") }
+                }
+                HStack(spacing: 4) {
+                    squareScientificButton("atan") { applyScientificFunc("atan") }
+                    squareScientificButton("x²") { applyScientificFunc("square") }
+                    squareScientificButton("xʸ") { appendSymbol("^") }
+                    squareScientificButton("√") { applyScientificFunc("sqrt") }
+                    squareScientificButton("n!") { applyScientificFunc("factorial") }
+                }
+                HStack(spacing: 4) {
+                    squareScientificButton("ln") { applyScientificFunc("ln") }
+                    squareScientificButton("log") { applyScientificFunc("log10") }
+                    squareScientificButton("e") { appendDigit(String(M_E)) }
+                    squareScientificButton("π") { appendDigit(String(Double.pi)) }
+                    squareScientificButton("mod") { appendSymbol("mod") }
+                }
             }
-            HStack(spacing: 6) {
-                calcButton("atan", color: .purple) { applyScientificFunc("atan") }
-                calcButton("x²", color: .purple) { applyScientificFunc("square") }
-                calcButton("xʸ", color: .purple) { appendSymbol("^") }
-                calcButton("√", color: .purple) { applyScientificFunc("sqrt") }
-                calcButton("n!", color: .purple) { applyScientificFunc("factorial") }
-            }
-            HStack(spacing: 6) {
-                calcButton("ln", color: .purple) { applyScientificFunc("ln") }
-                calcButton("log", color: .purple) { applyScientificFunc("log10") }
-                calcButton("e", color: .purple) { appendDigit(String(M_E)) }
-                calcButton("π", color: .purple) { appendDigit(String(Double.pi)) }
-                calcButton("mod", color: .purple) { appendSymbol("mod") }
-            }
+            .padding(.horizontal)
+            
             basicCalculatorGrid
         }
     }
     
-    // MARK: - Base / Hex View (ASCII + Reverse ASCII Lückenlos!)
+    // MARK: - Quadratischer Button-Generator für Scientific-Funktionen
+    private func squareScientificButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: {
+            hideKeyboard()
+            action()
+        }) {
+            Text(label)
+                .font(.system(size: 14, weight: .bold))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .aspectRatio(1.0, contentMode: .fit)
+                .background(Color.purple)
+                .foregroundColor(.white)
+                .cornerRadius(6)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    // MARK: - Base / Hex View
     private var hexBinView: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Bitweise Operationen
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Bitweise Logik-Operationen").font(.subheadline).fontWeight(.bold).foregroundColor(.purple)
                     Divider()
@@ -225,7 +245,6 @@ struct ContentView: View {
                 .background(Color(UIColor.secondarySystemBackground))
                 .cornerRadius(12)
                 
-                // 1. Zahl -> Hex / Binär / ASCII
                 if let val = Int64(displayValue.replacingOccurrences(of: ",", with: ".")) {
                     let res = BaseCalculator.convert(value: val)
                     VStack(alignment: .leading, spacing: 8) {
@@ -246,7 +265,6 @@ struct ContentView: View {
                     .cornerRadius(12)
                 }
                 
-                // 2. REVERSE ASCII (Zeichen -> Code)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Reverse ASCII (Zeichen → Code)").font(.subheadline).fontWeight(.bold).foregroundColor(.orange)
                     Divider()
@@ -298,7 +316,7 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
     
-    // MARK: - Sichere Berechnungs-Logik (Kein Absturz, Exakte Klammerrechnung)
+    // MARK: - Eingabe-Logik
     private func appendDigit(_ digit: String) {
         if isTypingNewNumber {
             displayValue = digit
@@ -365,17 +383,25 @@ struct ContentView: View {
         }
     }
     
-    // Eigener fließkommagenauer Evaluator (Sicher gegen Crashes)
+    // MARK: - Absturzsicherer Evaluator (Unterstützt fmod für Modulo)
     private func evaluateMathExpression(_ expr: String) -> Double? {
+        let tokens = expr.components(separatedBy: " ").filter { !$0.isEmpty }
+        
+        // Modulo-Berechnung direkt für 'A mod B' auswerten
+        if tokens.count == 3 && tokens[1] == "mod" {
+            if let a = Double(tokens[0]), let b = Double(tokens[2]), b != 0 {
+                return fmod(a, b)
+            }
+        }
+
         let formatted = expr
             .replacingOccurrences(of: "×", with: "*")
             .replacingOccurrences(of: "÷", with: "/")
             .replacingOccurrences(of: "mod", with: "%")
         
-        // Verwende NSExpression, erzwinge aber Fließkommazahlen (Double)
         var doubleExpr = ""
-        let tokens = formatted.components(separatedBy: " ")
-        for token in tokens {
+        let exprTokens = formatted.components(separatedBy: " ")
+        for token in exprTokens {
             if let intVal = Int(token) {
                 doubleExpr += "\(Double(intVal)) "
             } else {
