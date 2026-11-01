@@ -11,6 +11,15 @@
     ],
   },
   "files": [
+    { "path": "BaseCalculator.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
+    { "path": "ElektroCalculator.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
+    { "path": "ElektroView.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
+    { "path": "File.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
+    { "path": "IPv6Calculator.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
+    { "path": "IPv6View.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
+    { "path": "NetworkDiagnosticCalculator.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
+    { "path": "SubnetCalculator.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
+    { "path": "SubnetView.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
     { "kind": "folder", "path": "TheCalculator2.0", "target-membership": [ "TheCalculator2.0" ] },
     {
       "kind": "group",
