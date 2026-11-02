@@ -102,3 +102,14 @@
 - **Math vs. Tischrechner:** `2 + 8 × 2` evaluiert korrekt zu `12` (Math) bzw. `20` (Sequentiell).
 - **Prozentrechnung:** Funktioniert stabil in beiden Modi.
 - **Tastaturlayout:** Unterste Zeile im exakten 1/4 (42) zu 3/4 (=) Breitenverhältnis fixiert.
+## Stand 02.11.2026 (Stabilität & Scientific-Erweiterung)
+- **Division durch 0:** Zeigt klar `"Division durch 0 nicht möglich"` an.
+- **DEG/RAD Umschalter:** Umschaltung zwischen Grad (DEG) und Bogenmaß (RAD) für Winkelfunktionen im Scientific-Modus integriert.
+- **Potenzierung ($x^y$):** Übersetzer auf `**` angepasst ($3^5 = 243$).
+- **Crash-Schutz bei logarithmischen/Winkel-Funktionen:** Schutzabfragen bei `ln(<=0)`, `log(<=0)`, `sqrt(<0)` und `asin/acos(|x|>1)` verhindern Anwendungsabstürze.
+## Stand 02.11.2026 (Einheiten-Modul Erweiterung & Fixes)
+- **Kategorie-Wechsel Fix:** Automatischer Reset der `fromUnit` / `toUnit`-Auswahllisten beim Wechsel der Kategorie.
+- **Währungen ergänzt:** Nachbarländer-Währungen `PLN` (Polen), `CZK` (Tschechien), `DKK` (Dänemark) hinzugefügt.
+- **Kategorien erweitert:** Masse/Gewicht, Längen, IT-Speichergrößen, Datenraten und Temperaturen vollständig integriert.
+## Stand 02.11.2026 (IEC Speichergrößen - MiB/GiB Integration)
+- **IT-Speichergrößen:** Erweiterung um binäre Präfixe nach IEC-Norm (KiB, MiB, GiB, TiB, PiB auf 1024er Basis) im direkten Vergleich zu dezimalen Präfixen (KB, MB, GB, TB, PB auf 1000er Basis).

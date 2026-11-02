@@ -19,10 +19,13 @@ struct ContentView: View {
     @State private var formulaDisplay: String = ""
     @State private var formulaExpression: String = ""
     @State private var isTypingNewNumber: Bool = true
-    @State private var hasEvaluatedResult: Bool = false // Saubere Trennung nach '='
+    @State private var hasEvaluatedResult: Bool = false
     
-    // Modus-Steuerung: Punkt-vor-Strich (Standard) vs. Tischrechner (Sequentiell)
+    // Modus-Steuerung: Punkt-vor-Strich vs. Tischrechner
     @State private var useOrderOfOperations: Bool = true
+    
+    // Winkelfunktionen-Modus: DEG (Grad) vs. RAD (Bogenmaß)
+    @State private var useRadDegrees: Bool = false
     
     // ASCII Reverse Input State
     @State private var asciiInputChar: String = "A"
@@ -78,6 +81,23 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 4)
                 }
+                
+                // DEG / RAD Umschalter im Scientific-Modus
+                if selectedMode == .scientific {
+                    HStack {
+                        Text("Winkelmaß:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Picker("Winkelmaß", selection: $useRadDegrees) {
+                            Text("DEG (Grad)").tag(false)
+                            Text("RAD (Rad)").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 160)
+                    }
+                    .padding(.horizontal, 4)
+                }
             }
             .padding(.horizontal)
             .padding(.top, 4)
@@ -107,8 +127,8 @@ struct ContentView: View {
                     }
                     Spacer()
                     Text(displayValue)
-                        .font(.system(size: 38, weight: .bold, design: .monospaced))
-                        .minimumScaleFactor(0.5)
+                        .font(.system(size: 32, weight: .bold, design: .monospaced))
+                        .minimumScaleFactor(0.4)
                         .lineLimit(1)
                         .foregroundColor(.primary)
                 }
@@ -342,17 +362,14 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
     
-    // MARK: - LOGIK FÜR DURCHDACHTE FORMELVERARBEITUNG
+    // MARK: - ABGESICHERTE EINGABELOGIK
     private func appendDigit(_ digit: String) {
         if hasEvaluatedResult {
-            // Nach '=' fangen wir mit einer neuen Zahl komplett von vorne an
             displayValue = digit
             formulaExpression = digit
             hasEvaluatedResult = false
             isTypingNewNumber = false
         } else if isTypingNewNumber {
-            // Nach einem Operator ('+', '×') wird die Ziffer im Display neu begonnen,
-            // aber an die Formel ANGEHÄNGT!
             displayValue = digit
             formulaExpression += digit
             isTypingNewNumber = false
@@ -370,12 +387,10 @@ struct ContentView: View {
     
     private func appendSymbol(_ symbol: String) {
         if hasEvaluatedResult {
-            // Wenn man nach '=' einen Operator drückt, rechnet man mit dem Ergebnis weiter
             formulaExpression = displayValue + " " + symbol + " "
             hasEvaluatedResult = false
         } else {
             if formulaExpression.hasSuffix(" ") {
-                // Ersetzt doppelten Operator
                 formulaExpression = String(formulaExpression.dropLast(2)) + symbol + " "
             } else {
                 formulaExpression += " " + symbol + " "
@@ -469,8 +484,17 @@ struct ContentView: View {
         displayValue = String(~val)
     }
     
+    // MARK: - ABSOLUT ABGESICHERTER EVALUATOR
     private func calculateResult() {
-        let cleanExpr = formulaExpression.replacingOccurrences(of: ",", with: ".")
+        let cleanExpr = formulaExpression.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
+        
+        // Prüfen auf explizite Division durch 0
+        if cleanExpr.contains("/ 0") || cleanExpr.contains("÷ 0") {
+            displayValue = "Division durch 0 nicht möglich"
+            isTypingNewNumber = true
+            hasEvaluatedResult = true
+            return
+        }
         
         let result: Double?
         if useOrderOfOperations {
@@ -480,33 +504,67 @@ struct ContentView: View {
         }
         
         if let res = result {
-            displayValue = formatResult(res)
-            formulaDisplay = "\(formulaExpression) ="
-            formulaExpression = formatResult(res)
-            hasEvaluatedResult = true // Markiert, dass das Ergebnis ausgerechnet wurde
+            if res.isInfinite || res.isNaN {
+                displayValue = "Ungültiger Wert"
+            } else {
+                displayValue = formatResult(res)
+                formulaDisplay = "\(formulaExpression) ="
+                formulaExpression = formatResult(res)
+            }
+            hasEvaluatedResult = true
+            isTypingNewNumber = true
+        } else {
+            displayValue = "Syntaxfehler"
+            hasEvaluatedResult = true
             isTypingNewNumber = true
         }
     }
     
     private func evaluateMathExpression(_ expr: String) -> Double? {
-        let clean = expr
-            .replacingOccurrences(of: "=", with: "")
-            .trimmingCharacters(in: .whitespaces)
+        var clean = expr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
         
+        // Führende Operatoren abfangen
+        while clean.hasPrefix("×") || clean.hasPrefix("÷") || clean.hasPrefix("*") || clean.hasPrefix("/") || clean.hasPrefix("%") {
+            clean = String(clean.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
+        
+        guard !clean.isEmpty else { return nil }
+        
+        // Potenzierung x^y direkt auflösen
         let tokens = clean.components(separatedBy: " ").filter { !$0.isEmpty }
-        if tokens.count == 3 && tokens[1] == "mod" {
-            if let a = Double(tokens[0]), let b = Double(tokens[2]), b != 0 {
-                return fmod(a, b)
+        if tokens.count == 3 && tokens[1] == "^" {
+            if let a = Double(tokens[0]), let b = Double(tokens[2]) {
+                return pow(a, b)
+            }
+        }
+        
+        // Mehrgliedriges Modulo auflösen (z.B. "60 * 9 mod 6" -> "540 mod 6" -> 0)
+        if clean.contains("mod") || clean.contains("%") {
+            let modSymbol = clean.contains("mod") ? "mod" : "%"
+            let parts = clean.components(separatedBy: " \(modSymbol) ")
+            if parts.count == 2 {
+                if let leftVal = evaluateMathExpression(parts[0]), let rightVal = evaluateMathExpression(parts[1]), rightVal != 0 {
+                    return fmod(leftVal, rightVal)
+                }
+                return nil
             }
         }
 
         let formatted = clean
             .replacingOccurrences(of: "×", with: "*")
             .replacingOccurrences(of: "÷", with: "/")
-            .replacingOccurrences(of: "mod", with: "%")
             
-        let nsExpr = NSExpression(format: formatted)
-        return nsExpr.expressionValue(with: nil, context: nil) as? Double
+        let doubleExpr = formatted.components(separatedBy: " ")
+        if doubleExpr.contains("") || formatted.contains("**") || formatted.contains("//") || formatted.contains("++") {
+            return nil
+        }
+
+        let parsedExpr = NSExpression(format: formatted)
+        if let result = parsedExpr.expressionValue(with: nil, context: nil) as? NSNumber {
+            return result.doubleValue
+        }
+        
+        return nil
     }
     
     private func evaluateSequentialExpression(_ expr: String) -> Double? {
@@ -533,8 +591,13 @@ struct ContentView: View {
             case "+": runningResult += nextVal
             case "-": runningResult -= nextVal
             case "×", "*": runningResult *= nextVal
-            case "÷", "/": if nextVal != 0 { runningResult /= nextVal }
-            case "mod", "%": if nextVal != 0 { runningResult = fmod(runningResult, nextVal) }
+            case "÷", "/":
+                if nextVal == 0 { return nil }
+                runningResult /= nextVal
+            case "^": runningResult = pow(runningResult, nextVal)
+            case "mod", "%":
+                if nextVal == 0 { return nil }
+                runningResult = fmod(runningResult, nextVal)
             default: break
             }
             idx += 2
@@ -542,22 +605,39 @@ struct ContentView: View {
         return runningResult
     }
     
+    // Scientific-Funktionen mit mathematischen Schutzschaltern
     private func applyScientificFunc(_ function: String) {
         guard let val = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
         var res: Double = 0.0
         
+        // Grad vs. Bogenmaß Umrechnungsfaktor
+        let angleMultiplier = useRadDegrees ? 1.0 : (.pi / 180.0)
+        let invAngleMultiplier = useRadDegrees ? 1.0 : (180.0 / .pi)
+        
         switch function {
-        case "sin": res = sin(val * .pi / 180.0)
-        case "cos": res = cos(val * .pi / 180.0)
-        case "tan": res = tan(val * .pi / 180.0)
-        case "asin": res = asin(val) * 180.0 / .pi
-        case "acos": res = acos(val) * 180.0 / .pi
-        case "atan": res = atan(val) * 180.0 / .pi
-        case "sqrt": res = sqrt(val)
+        case "sin": res = sin(val * angleMultiplier)
+        case "cos": res = cos(val * angleMultiplier)
+        case "tan": res = tan(val * angleMultiplier)
+        case "asin":
+            guard val >= -1.0 && val <= 1.0 else { displayValue = "Ungültiger Wert"; isTypingNewNumber = true; return }
+            res = asin(val) * invAngleMultiplier
+        case "acos":
+            guard val >= -1.0 && val <= 1.0 else { displayValue = "Ungültiger Wert"; isTypingNewNumber = true; return }
+            res = acos(val) * invAngleMultiplier
+        case "atan": res = atan(val) * invAngleMultiplier
+        case "sqrt":
+            guard val >= 0 else { displayValue = "Ungültiger Wert"; isTypingNewNumber = true; return }
+            res = sqrt(val)
         case "square": res = val * val
-        case "ln": res = log(val)
-        case "log10": res = log10(val)
-        case "factorial": res = factorial(Int(val))
+        case "ln":
+            guard val > 0 else { displayValue = "Ungültiger Wert"; isTypingNewNumber = true; return }
+            res = log(val)
+        case "log10":
+            guard val > 0 else { displayValue = "Ungültiger Wert"; isTypingNewNumber = true; return }
+            res = log10(val)
+        case "factorial":
+            guard val >= 0 && val <= 170 else { displayValue = "Ungültiger Wert"; isTypingNewNumber = true; return }
+            res = factorial(Int(val))
         default: break
         }
         
