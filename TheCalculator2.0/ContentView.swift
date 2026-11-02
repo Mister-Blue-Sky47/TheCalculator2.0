@@ -19,6 +19,10 @@ struct ContentView: View {
     @State private var formulaDisplay: String = ""
     @State private var formulaExpression: String = ""
     @State private var isTypingNewNumber: Bool = true
+    @State private var hasEvaluatedResult: Bool = false // Saubere Trennung nach '='
+    
+    // Modus-Steuerung: Punkt-vor-Strich (Standard) vs. Tischrechner (Sequentiell)
+    @State private var useOrderOfOperations: Bool = true
     
     // ASCII Reverse Input State
     @State private var asciiInputChar: String = "A"
@@ -40,25 +44,40 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 8) {
             
-            // 1. MODUS SELECTION
-            HStack {
-                Text("Modus:")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-                
-                Picker("Modus", selection: $selectedMode) {
-                    ForEach(CalculatorMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
+            // 1. MODUS SELECTION & EINSTELLUNGEN
+            VStack(spacing: 6) {
+                HStack {
+                    Text("Modus:")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    Picker("Modus", selection: $selectedMode) {
+                        ForEach(CalculatorMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color(UIColor.tertiarySystemBackground))
+                    .cornerRadius(8)
                 }
-                .pickerStyle(.menu)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color(UIColor.tertiarySystemBackground))
-                .cornerRadius(8)
+                
+                if selectedMode == .basic || selectedMode == .scientific {
+                    HStack {
+                        Toggle(isOn: $useOrderOfOperations) {
+                            Text(useOrderOfOperations ? "Punkt-vor-Strich (Math)" : "Tischrechner (Sequentiell)")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                        }
+                        .toggleStyle(SwitchToggleStyle(tint: .orange))
+                    }
+                    .padding(.horizontal, 4)
+                }
             }
             .padding(.horizontal)
             .padding(.top, 4)
@@ -74,7 +93,7 @@ struct ContentView: View {
                     }
                     Spacer()
                     Text(formulaDisplay)
-                        .font(.system(size: 13, design: .monospaced))
+                        .font(.system(size: 14, design: .monospaced))
                         .foregroundColor(.gray)
                         .lineLimit(1)
                 }
@@ -142,7 +161,7 @@ struct ContentView: View {
                 calcButton("C", color: .red) { clear() }
                 calcButton("(", color: .gray) { appendSymbol("(") }
                 calcButton(")", color: .gray) { appendSymbol(")") }
-                calcButton("%", color: .gray) { applyPercentage() }
+                calcButton("%", color: .gray) { applySmartPercentage() }
             }
             HStack(spacing: 8) {
                 calcButton("7") { appendDigit("7") }
@@ -165,17 +184,25 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 calcButton("0") { appendDigit("0") }
                 calcButton(",") { appendComma() }
-                calcButton("42", color: .purple) { trigger42Fact() }
+                calcButton("DEL", color: .red) { deleteLastChar() }
                 calcButton("+", color: .orange) { appendSymbol("+") }
             }
-            HStack(spacing: 8) {
-                calcButton("=", color: .orange) { calculateResult() }
+            
+            GeometryReader { geo in
+                HStack(spacing: 8) {
+                    calcButton("42", color: .purple) { trigger42Fact() }
+                        .frame(width: (geo.size.width - 8) * 0.25)
+                    
+                    calcButton("=", color: .orange) { calculateResult() }
+                        .frame(width: (geo.size.width - 8) * 0.75)
+                }
             }
+            .frame(height: 52)
         }
         .padding(.horizontal)
     }
     
-    // MARK: - Scientific Tastatur Grid (Kompakte quadratische Blöcke oben)
+    // MARK: - Scientific Tastatur Grid
     private var scientificCalculatorGrid: some View {
         VStack(spacing: 8) {
             VStack(spacing: 4) {
@@ -207,7 +234,6 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - Quadratischer Button-Generator für Scientific-Funktionen
     private func squareScientificButton(_ label: String, action: @escaping () -> Void) -> some View {
         Button(action: {
             hideKeyboard()
@@ -316,33 +342,75 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
     
-    // MARK: - Eingabe-Logik
+    // MARK: - LOGIK FÜR DURCHDACHTE FORMELVERARBEITUNG
     private func appendDigit(_ digit: String) {
-        if isTypingNewNumber {
+        if hasEvaluatedResult {
+            // Nach '=' fangen wir mit einer neuen Zahl komplett von vorne an
             displayValue = digit
+            formulaExpression = digit
+            hasEvaluatedResult = false
+            isTypingNewNumber = false
+        } else if isTypingNewNumber {
+            // Nach einem Operator ('+', '×') wird die Ziffer im Display neu begonnen,
+            // aber an die Formel ANGEHÄNGT!
+            displayValue = digit
+            formulaExpression += digit
             isTypingNewNumber = false
         } else {
-            displayValue += digit
+            if displayValue == "0" {
+                displayValue = digit
+                formulaExpression = String(formulaExpression.dropLast()) + digit
+            } else {
+                displayValue += digit
+                formulaExpression += digit
+            }
         }
-        formulaExpression += digit
         formulaDisplay = formulaExpression
     }
     
     private func appendSymbol(_ symbol: String) {
-        if isTypingNewNumber && formulaExpression.isEmpty {
+        if hasEvaluatedResult {
+            // Wenn man nach '=' einen Operator drückt, rechnet man mit dem Ergebnis weiter
             formulaExpression = displayValue + " " + symbol + " "
+            hasEvaluatedResult = false
         } else {
-            formulaExpression += " " + symbol + " "
+            if formulaExpression.hasSuffix(" ") {
+                // Ersetzt doppelten Operator
+                formulaExpression = String(formulaExpression.dropLast(2)) + symbol + " "
+            } else {
+                formulaExpression += " " + symbol + " "
+            }
         }
         formulaDisplay = formulaExpression
         isTypingNewNumber = true
     }
     
     private func appendComma() {
-        if !displayValue.contains(",") {
+        if hasEvaluatedResult {
+            displayValue = "0,"
+            formulaExpression = "0."
+            hasEvaluatedResult = false
+            isTypingNewNumber = false
+        } else if isTypingNewNumber {
+            displayValue = "0,"
+            formulaExpression += "0."
+            isTypingNewNumber = false
+        } else if !displayValue.contains(",") {
             displayValue += ","
             formulaExpression += "."
         }
+        formulaDisplay = formulaExpression
+    }
+    
+    private func deleteLastChar() {
+        if !displayValue.isEmpty && displayValue != "0" {
+            displayValue.removeLast()
+            if displayValue.isEmpty { displayValue = "0" }
+        }
+        if !formulaExpression.isEmpty {
+            formulaExpression.removeLast()
+        }
+        formulaDisplay = formulaExpression
     }
     
     private func clear() {
@@ -350,6 +418,7 @@ struct ContentView: View {
         formulaDisplay = ""
         formulaExpression = ""
         isTypingNewNumber = true
+        hasEvaluatedResult = false
     }
     
     private func trigger42Fact() {
@@ -357,11 +426,38 @@ struct ContentView: View {
         showNerdFact = true
     }
     
-    private func applyPercentage() {
+    private func applySmartPercentage() {
         guard let current = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
-        let pct = current / 100.0
-        displayValue = formatResult(pct)
-        isTypingNewNumber = true
+        
+        if useOrderOfOperations {
+            let pct = current / 100.0
+            displayValue = formatResult(pct)
+            
+            var components = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
+            if !components.isEmpty {
+                components[components.count - 1] = formatResult(pct).replacingOccurrences(of: ",", with: ".")
+                formulaExpression = components.joined(separator: " ")
+            } else {
+                formulaExpression = formatResult(pct).replacingOccurrences(of: ",", with: ".")
+            }
+            formulaDisplay = formulaExpression
+        } else {
+            let cleanExpr = formulaExpression.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
+            let tokens = cleanExpr.components(separatedBy: " ").filter { !$0.isEmpty }
+            
+            if tokens.count >= 2, let baseVal = Double(tokens[0]) {
+                let res = baseVal * (current / 100.0)
+                displayValue = formatResult(res)
+                formulaDisplay = "\(formatResult(baseVal)) × \(formatResult(current))% ="
+                formulaExpression = formatResult(res)
+                hasEvaluatedResult = true
+            } else {
+                let pct = current / 100.0
+                displayValue = formatResult(pct)
+                formulaExpression = formatResult(pct).replacingOccurrences(of: ",", with: ".")
+                formulaDisplay = formulaExpression
+            }
+        }
     }
     
     private func applyBitwiseOp(_ op: String) {
@@ -375,42 +471,75 @@ struct ContentView: View {
     
     private func calculateResult() {
         let cleanExpr = formulaExpression.replacingOccurrences(of: ",", with: ".")
-        if let result = evaluateMathExpression(cleanExpr) {
-            displayValue = formatResult(result)
+        
+        let result: Double?
+        if useOrderOfOperations {
+            result = evaluateMathExpression(cleanExpr)
+        } else {
+            result = evaluateSequentialExpression(cleanExpr)
+        }
+        
+        if let res = result {
+            displayValue = formatResult(res)
             formulaDisplay = "\(formulaExpression) ="
-            formulaExpression = formatResult(result)
+            formulaExpression = formatResult(res)
+            hasEvaluatedResult = true // Markiert, dass das Ergebnis ausgerechnet wurde
             isTypingNewNumber = true
         }
     }
     
-    // MARK: - Absturzsicherer Evaluator (Unterstützt fmod für Modulo)
     private func evaluateMathExpression(_ expr: String) -> Double? {
-        let tokens = expr.components(separatedBy: " ").filter { !$0.isEmpty }
+        let clean = expr
+            .replacingOccurrences(of: "=", with: "")
+            .trimmingCharacters(in: .whitespaces)
         
-        // Modulo-Berechnung direkt für 'A mod B' auswerten
+        let tokens = clean.components(separatedBy: " ").filter { !$0.isEmpty }
         if tokens.count == 3 && tokens[1] == "mod" {
             if let a = Double(tokens[0]), let b = Double(tokens[2]), b != 0 {
                 return fmod(a, b)
             }
         }
 
-        let formatted = expr
+        let formatted = clean
             .replacingOccurrences(of: "×", with: "*")
             .replacingOccurrences(of: "÷", with: "/")
             .replacingOccurrences(of: "mod", with: "%")
+            
+        let nsExpr = NSExpression(format: formatted)
+        return nsExpr.expressionValue(with: nil, context: nil) as? Double
+    }
+    
+    private func evaluateSequentialExpression(_ expr: String) -> Double? {
+        var clean = expr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
         
-        var doubleExpr = ""
-        let exprTokens = formatted.components(separatedBy: " ")
-        for token in exprTokens {
-            if let intVal = Int(token) {
-                doubleExpr += "\(Double(intVal)) "
+        while let rangeOfOpen = clean.range(of: "("), let rangeOfClose = clean.range(of: ")") {
+            let innerExpr = String(clean[rangeOfOpen.upperBound..<rangeOfClose.lowerBound])
+            if let innerResult = evaluateSequentialExpression(innerExpr) {
+                clean.replaceSubrange(rangeOfOpen.lowerBound...rangeOfClose.upperBound, with: "\(innerResult)")
             } else {
-                doubleExpr += "\(token) "
+                break
             }
         }
         
-        let nsExpr = NSExpression(format: doubleExpr)
-        return nsExpr.expressionValue(with: nil, context: nil) as? Double
+        let tokens = clean.components(separatedBy: " ").filter { !$0.isEmpty }
+        guard var runningResult = Double(tokens.first ?? "") else { return nil }
+        
+        var idx = 1
+        while idx < tokens.count - 1 {
+            let op = tokens[idx]
+            guard let nextVal = Double(tokens[idx + 1]) else { break }
+            
+            switch op {
+            case "+": runningResult += nextVal
+            case "-": runningResult -= nextVal
+            case "×", "*": runningResult *= nextVal
+            case "÷", "/": if nextVal != 0 { runningResult /= nextVal }
+            case "mod", "%": if nextVal != 0 { runningResult = fmod(runningResult, nextVal) }
+            default: break
+            }
+            idx += 2
+        }
+        return runningResult
     }
     
     private func applyScientificFunc(_ function: String) {
@@ -435,6 +564,7 @@ struct ContentView: View {
         formulaDisplay = "\(function)(\(formatResult(val))) ="
         displayValue = formatResult(res)
         formulaExpression = formatResult(res)
+        hasEvaluatedResult = true
         isTypingNewNumber = true
     }
     

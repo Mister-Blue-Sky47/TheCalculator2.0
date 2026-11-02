@@ -80,3 +80,25 @@
 * **Known Issues / Offene Punkte für die nächste Session:**
   * Re-Design der Science-Grid Tastenhöhen im `SCIENTIFIC`-Modus.
   * Ersetzen der `NSExpression`-Evaluierung durch einen eigenen Parser zur Vermeidung von Modulo-Crashes (`%`).
+
+## Stand 02.11.2026 (Korrektur & Tastatur-Feinschliff)
+- **Tischrechner-Modus:** Klammerauflösung (z.B. `2×(5+5) = 20`) korrigiert.
+- **Prozentrechnung:** Trennung zwischen mathematischem `%` und kaufmännischem `% (Tisch)` (`100 × 2% = 2`).
+- **Tastaturlayout:** `42`-Taste in der Größe an Standard-Buttons angepasst; `%-Tisch`-Taste ergänzt.
+## Stand 02.11.2026 (Fixes & Layout)
+- **Modulo & Evaluator:** Absturz bei doppelten Is-Gleich-Zeichen (`==`) und String-Laufzeitfehlern behoben.
+- **Tastatur-Layout:** `=` breiter gestaltet, `42` und `% (Tisch)` als gleichgroße Zusatz-Buttons angeordnet.
+- **Prozentrechnung:** Mathematische `%`-Umrechnung wandelt Eingabewerte sauber in Hundertstel um (`100 × 2% = 2`).
+## Stand 02.11.2026 (Refactoring Eingabe & Layout)
+- **Tastaturlayout:** Doppelte Prozenttaste entfernt; unterste Zeile bereinigt mit breiter `=`-Taste.
+- **Intelligente %-Taste:** Schaltet automatisch zwischen mathematischer Hundertstel-Umrechnung und kaufmännischer Prozentrechnung (Tischrechner-Modus) um.
+- **Trenn-Reset:** Nach `=` wird bei Zahleneingabe die alte Formel gelöscht; bei Operatoreingabe mit dem Ergebnis weitergerechnet.
+## Stand 02.11.2026 (Fix: Prozentrechnung & Layout-Gewichtung)
+- **Breitenverhältnis:** Unterste Zeile per `GeometryReader` exakt aufgeteilt (42 = 25%, `=` = 75%).
+- **Prozent-Bugbehebung:** Zusammenkleben von Zahlenstrings bei der Prozentrechnung behoben (`100 × 2%` ergibt im Math-Modus exakt `2`).
+- **Input-Reset:** Nach Ergebnissevaluierung startet die Nächste Zahl garantiert eine frische Formel.
+## Stand 02.11.2026 (Abschluss Basis-Core & Formellogik)
+- **Formelverarbeitung:** `hasEvaluatedResult`-Flag eingeführt für saubere Trennung zwischen Folgerechnung mit Ergebnis und Neuanfang.
+- **Math vs. Tischrechner:** `2 + 8 × 2` evaluiert korrekt zu `12` (Math) bzw. `20` (Sequentiell).
+- **Prozentrechnung:** Funktioniert stabil in beiden Modi.
+- **Tastaturlayout:** Unterste Zeile im exakten 1/4 (42) zu 3/4 (=) Breitenverhältnis fixiert.
