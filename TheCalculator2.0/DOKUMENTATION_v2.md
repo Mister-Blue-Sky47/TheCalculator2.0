@@ -118,3 +118,26 @@
 - **Pfad:** `~/clean_caches.sh`
 - **Funktion:** Automatische Bereinigung verwaister `AssetsV2`-Mobil-Assets & Simulatoren auf Knopfdruck
 - **Befehl zum Ausführen bei knappem Speicher:** `./clean_caches.sh`
+---
+
+## 4. System-Bereinigung & Xcode-Struktur-Stabilisierung (06. November 2026)
+
+### 4.1. SSD-Speicherplatzfreigabe (Systemdaten / AssetsV2)
+- **Problemstellung:** Über 90 GB temporäre iOS-Simulator-Caches und Assets lagen verwaist im Systemverzeichnis `/System/Volumes/Data/System/Library/AssetsV2/`.
+- **Lösung:** Erteilung von Festplattenvollzugriff für Terminal.app sowie gezielte Bereinigung der Laufzeit-Assets.
+- **Ergebnis:** Freier Speicherplatz von 13 GiB auf **220 GiB (38 % Belegung)** erweitert.
+- **Wartungsskript:** Automatisches Aufräum-Skript unter `~/clean_caches.sh` hinterlegt.
+
+### 4.2. Behebung von Pfad-Verschachtelungen & Scheme-Verlust in Xcode
+- **Fehlerbild:** Xcode verlor das Haupt-Target (`No Selection`), der Play-Button war inaktiv und das Öffnen meldete `does not contain a project definition file`.
+- **Ursache:** Doppelte Ordnerstrukturen und Null-Byte-Relikte durch Pfadverschiebung zwischen Home-Directory (`~`) und `~/Documents`.
+- **Korrekturmaßnahme:**
+  1. Bereinigung verwaister Einträge im Xcode-Startfenster (*Remove from Recents*).
+  2. Entfernung fehlerhafter 0-Byte `.xcodeproj`-Hüllen auf Wurzelebene.
+  3. Vollständiger Neustart von Xcode zur automatischen Neugenerierung des Build-Schemes `TheCalculator2.0`.
+- **Status:** Build und Simulation auf iOS-Zielgerät (*iPhone 17e*) voll funktionsfähig (`Build Succeeded`).
+
+### 4.3. Git-Versionierung & Stand-Sicherung
+- **Aktueller Stand:** Codebase stabilisiert (inkl. Formellogik, Scientific-Modulen, Themes, Einheiten-Umrechner).
+- **Repository-Stand:** Hauptzweig `main` auf GitHub (`Mister-Blue-Sky47/TheCalculator2.0`) synchronisiert.
+---
