@@ -113,3 +113,8 @@
 - **Kategorien erweitert:** Masse/Gewicht, Längen, IT-Speichergrößen, Datenraten und Temperaturen vollständig integriert.
 ## Stand 02.11.2026 (IEC Speichergrößen - MiB/GiB Integration)
 - **IT-Speichergrößen:** Erweiterung um binäre Präfixe nach IEC-Norm (KiB, MiB, GiB, TiB, PiB auf 1024er Basis) im direkten Vergleich zu dezimalen Präfixen (KB, MB, GB, TB, PB auf 1000er Basis).
+## Prävention & Systempflege
+
+- **Pfad:** `~/clean_caches.sh`
+- **Funktion:** Automatische Bereinigung verwaister `AssetsV2`-Mobil-Assets & Simulatoren auf Knopfdruck
+- **Befehl zum Ausführen bei knappem Speicher:** `./clean_caches.sh`

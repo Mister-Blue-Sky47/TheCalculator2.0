@@ -1,328 +1,297 @@
+// xcode: set sdk=iOS
+
 import SwiftUI
 
-enum UnitCategory: String, CaseIterable, Identifiable {
-    case currency = "Währungen"
-    case weight = "Gewicht / Masse"
-    case length = "Länge / Distanz"
-    case data = "Speichergrößen (IT)"
-    case dataRate = "Datenraten (Netzwerk)"
-    case temperature = "Temperatur"
-    
-    var id: String { self.rawValue }
-}
-
 struct UnitConverterView: View {
-    @State private var selectedCategory: UnitCategory = .currency
     @State private var inputValue: String = "1"
+    @State private var selectedCategory: UnitCategory = .mass
+    @State private var sourceUnit: String = "Gramm (g)"
+    @State private var targetUnit: String = "Kilogramm (kg)"
     
-    @State private var fromUnit: String = "EUR (€)"
-    @State private var toUnit: String = "PLN (zł)"
-    
-    // Richtwerte für Währungskurse (Basis: EUR = 1.0)
-    let currencyRates: [String: Double] = [
-        "EUR (€)": 1.0,
-        "CHF (CHF)": 0.94,
-        "PLN (zł)": 4.35,      // Polen (Zloty)
-        "CZK (Kč)": 25.20,     // Tschechien (Krone)
-        "DKK (kr)": 7.46,      // Dänemark (Krone)
-        "USD ($)": 1.08,
-        "GBP (£)": 0.85
-    ]
-    
-    // Einheiten-Mapping je Kategorie
-    var unitsForSelectedCategory: [String] {
-        switch selectedCategory {
-        case .currency:
-            return Array(currencyRates.keys).sorted()
-        case .weight:
-            return ["Gramm (g)", "Kilogramm (kg)", "Tonne (t)", "Unze (oz)", "Pfund (lb)"]
-        case .length:
-            return ["Millimeter (mm)", "Zentimeter (cm)", "Meter (m)", "Kilometer (km)", "Zoll / Inch (in)", "Fuß (ft)", "Meile (mi)"]
-        case .data:
-            return [
-                "Byte (B)",
-                "Kilobyte (KB - 1000 B)", "Kibibyte (KiB - 1024 B)",
-                "Megabyte (MB - 1000 KB)", "Mebibyte (MiB - 1024 KiB)",
-                "Gigabyte (GB - 1000 MB)", "Gibibyte (GiB - 1024 MiB)",
-                "Terabyte (TB - 1000 GB)", "Tebibyte (TiB - 1024 GiB)",
-                "Petabyte (PB - 1000 TB)", "Pebibyte (PiB - 1024 TiB)"
-            ]
-        case .dataRate:
-            return ["Bit/s (bps)", "Kbit/s (Kbps)", "Mbit/s (Mbps)", "Gbit/s (Gbps)"]
-        case .temperature:
-            return ["Grad Celsius (°C)", "Grad Fahrenheit (°F)", "Kelvin (K)"]
-        }
+    enum UnitCategory: String, CaseIterable, Identifiable {
+        case length = "Länge"
+        case mass = "Gewicht / Masse"
+        case temperature = "Temperatur"
+        case dataRate = "Datenrate"
+        case storage = "IT-Speicher"
+        case currency = "Währungen"
+        
+        var id: String { self.rawValue }
     }
     
-    var convertedResult: String {
-        guard let value = Double(inputValue.replacingOccurrences(of: ",", with: ".")) else {
-            return "Ungültige Eingabe"
-        }
+    var convertedValue: String {
+        guard let val = Double(inputValue.replacingOccurrences(of: ",", with: ".")) else { return "0" }
         
         switch selectedCategory {
-        case .currency:
-            guard let fromRate = currencyRates[fromUnit], let toRate = currencyRates[toUnit] else { return "0" }
-            let inEUR = value / fromRate
-            let result = inEUR * toRate
-            return String(format: "%.2f", result).replacingOccurrences(of: ".", with: ",")
-            
-        case .weight:
-            let inGram = convertWeightToGram(value: value, unit: fromUnit)
-            let result = convertGramToTarget(gram: inGram, unit: toUnit)
-            return String(format: "%.4f", result).replacingOccurrences(of: ".", with: ",")
-            
         case .length:
-            let inMeter = convertLengthToMeter(value: value, unit: fromUnit)
-            let result = convertMeterToTarget(meter: inMeter, unit: toUnit)
-            return String(format: "%.4f", result).replacingOccurrences(of: ".", with: ",")
-            
-        case .data:
-            let inBytes = convertDataToBytes(value: value, unit: fromUnit)
-            let result = convertBytesToTarget(bytes: inBytes, unit: toUnit)
-            return String(format: "%.4f", result).replacingOccurrences(of: ".", with: ",")
-            
-        case .dataRate:
-            let inBps = convertDataRateToBps(value: value, unit: fromUnit)
-            let result = convertBpsToTarget(bps: inBps, unit: toUnit)
-            return String(format: "%.2f", result).replacingOccurrences(of: ".", with: ",")
-            
+            return convertLength(val: val, from: sourceUnit, to: targetUnit)
+        case .mass:
+            return convertMass(val: val, from: sourceUnit, to: targetUnit)
         case .temperature:
-            let result = convertTemperature(val: value, from: fromUnit, to: toUnit)
-            return String(format: "%.2f", result).replacingOccurrences(of: ".", with: ",")
+            return convertTemperature(val: val, from: sourceUnit, to: targetUnit)
+        case .dataRate:
+            return convertDataRate(val: val, from: sourceUnit, to: targetUnit)
+        case .storage:
+            return convertStorage(val: val, from: sourceUnit, to: targetUnit)
+        case .currency:
+            return convertCurrency(val: val, from: sourceUnit, to: targetUnit)
         }
     }
-
+    
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
+        VStack(spacing: 10) {
+            // 1. Kategorie-Auswahl
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Kategorie auswählen:")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
                 
-                // KATEGORIE SELEKTOR
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Kategorie auswählen:")
-                        .font(.caption)
-                        .fontWeight(.bold)
+                Picker("Kategorie", selection: $selectedCategory) {
+                    ForEach(UnitCategory.allCases) { cat in
+                        Text(cat.rawValue).tag(cat)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(Color(UIColor.tertiarySystemBackground))
+                .cornerRadius(8)
+                .onChange(of: selectedCategory) { _ in
+                    resetUnitsForCategory()
+                }
+            }
+            .padding(.horizontal, 12)
+            
+            // 2. Wert-Eingabe
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Wert eingeben:")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
+                
+                TextField("Wert", text: $inputValue)
+                    .keyboardType(.decimalPad)
+                    .font(.system(size: 20, weight: .bold, design: .monospaced))
+                    .padding(8)
+                    .background(Color(UIColor.tertiarySystemBackground))
+                    .cornerRadius(8)
+            }
+            .padding(.horizontal, 12)
+            
+            // 3. Von / Nach Umrechnungs-Picker (Nebeneinander ohne Überlappung)
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Von:")
+                        .font(.caption2)
+                        .bold()
                         .foregroundColor(.secondary)
                     
-                    Picker("Kategorie", selection: $selectedCategory) {
-                        ForEach(UnitCategory.allCases) { cat in
-                            Text(cat.rawValue).tag(cat)
+                    Picker("Von", selection: $sourceUnit) {
+                        ForEach(availableUnits(), id: \.self) { unit in
+                            Text(unit).tag(unit)
                         }
                     }
                     .pickerStyle(.menu)
-                    .padding(8)
+                    .labelsHidden()
                     .frame(maxWidth: .infinity)
-                    .background(Color(UIColor.secondarySystemBackground))
+                    .padding(.vertical, 4)
+                    .background(Color(UIColor.tertiarySystemBackground))
                     .cornerRadius(8)
-                    .onChange(of: selectedCategory) { _ in
-                        if let first = unitsForSelectedCategory.first,
-                           let second = unitsForSelectedCategory.dropFirst().first {
-                            fromUnit = first
-                            toUnit = second
-                        }
-                    }
                 }
                 
-                // EINGABEWERT
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Wert eingeben:")
-                        .font(.caption)
-                        .fontWeight(.bold)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.orange)
+                    .padding(.top, 14)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Nach:")
+                        .font(.caption2)
+                        .bold()
                         .foregroundColor(.secondary)
                     
-                    TextField("1.0", text: $inputValue)
-                        .keyboardType(.decimalPad)
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .padding(10)
-                        .background(Color(UIColor.secondarySystemBackground))
-                        .cornerRadius(8)
-                }
-                
-                // VON UND ZU AUSWAHL
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Von:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Picker("Von", selection: $fromUnit) {
-                            ForEach(unitsForSelectedCategory, id: \.self) { unit in
-                                Text(unit).tag(unit)
-                            }
+                    Picker("Nach", selection: $targetUnit) {
+                        ForEach(availableUnits(), id: \.self) { unit in
+                            Text(unit).tag(unit)
                         }
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: .infinity)
-                        .padding(6)
-                        .background(Color(UIColor.tertiarySystemBackground))
-                        .cornerRadius(8)
                     }
-                    
-                    Image(systemName: "arrow.right")
-                        .foregroundColor(.orange)
-                        .font(.title3)
-                        .padding(.top, 16)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Nach:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Picker("Nach", selection: $toUnit) {
-                            ForEach(unitsForSelectedCategory, id: \.self) { unit in
-                                Text(unit).tag(unit)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: .infinity)
-                        .padding(6)
-                        .background(Color(UIColor.tertiarySystemBackground))
-                        .cornerRadius(8)
-                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .background(Color(UIColor.tertiarySystemBackground))
+                    .cornerRadius(8)
                 }
+            }
+            .padding(.horizontal, 12)
+            
+            // 4. Ergebnis-Box (Sauber getrennt)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Ergebnis:")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
                 
-                // ERGEBNIS-BOX
-                VStack(spacing: 6) {
-                    Text("Ergebnis:")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    Text("\(convertedResult) \(toUnit)")
+                HStack {
+                    Text(convertedValue)
                         .font(.system(size: 22, weight: .bold, design: .monospaced))
                         .foregroundColor(.orange)
-                        .multilineTextAlignment(.center)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                    
+                    Spacer()
+                    
+                    Text(targetUnit)
+                        .font(.subheadline)
+                        .bold()
+                        .foregroundColor(.primary)
                 }
-                .padding()
-                .frame(maxWidth: .infinity)
+                .padding(10)
                 .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(12)
+                .cornerRadius(10)
             }
-            .padding(.horizontal)
-            .padding(.top, 8)
+            .padding(.horizontal, 12)
+            
+            Spacer(minLength: 0)
         }
-        .onAppear {
-            if let first = unitsForSelectedCategory.first,
-               let second = unitsForSelectedCategory.dropFirst().first {
-                fromUnit = first
-                toUnit = second
-            }
-        }
+        .padding(.top, 4)
     }
     
-    // MARK: - Hilfsfunktionen Umrechnung
-    private func convertWeightToGram(value: Double, unit: String) -> Double {
-        switch unit {
-        case "Gramm (g)": return value
-        case "Kilogramm (kg)": return value * 1000.0
-        case "Tonne (t)": return value * 1_000_000.0
-        case "Unze (oz)": return value * 28.3495
-        case "Pfund (lb)": return value * 453.592
-        default: return value
+    // MARK: - Helper Logik
+    private func resetUnitsForCategory() {
+        let units = availableUnits()
+        if let first = units.first, let second = units.dropFirst().first {
+            sourceUnit = first
+            targetUnit = second
         }
     }
     
-    private func convertGramToTarget(gram: Double, unit: String) -> Double {
-        switch unit {
-        case "Gramm (g)": return gram
-        case "Kilogramm (kg)": return gram / 1000.0
-        case "Tonne (t)": return gram / 1_000_000.0
-        case "Unze (oz)": return gram / 28.3495
-        case "Pfund (lb)": return gram / 453.592
-        default: return gram
+    private func availableUnits() -> [String] {
+        switch selectedCategory {
+        case .length:
+            return ["Millimeter (mm)", "Zentimeter (cm)", "Meter (m)", "Kilometer (km)", "Zoll (in)", "Fuß (ft)", "Meilen (mi)"]
+        case .mass:
+            return ["Gramm (g)", "Kilogramm (kg)", "Tonne (t)", "Unze (oz)", "Pfund (lb)"]
+        case .temperature:
+            return ["Grad Celsius (°C)", "Grad Fahrenheit (°F)", "Kelvin (K)"]
+        case .dataRate:
+            return ["Bit/s (bps)", "Kbit/s (Kbps)", "Mbit/s (Mbps)", "Gbit/s (Gbps)"]
+        case .storage:
+            return ["Byte (B)", "Kilobyte (KB)", "Megabyte (MB)", "Gigabyte (GB)", "Kibibyte (KiB)", "Mebibyte (MiB)", "Gibibyte (GiB)"]
+        case .currency:
+            return ["EUR (€)", "USD ($)", "GBP (£)", "CHF (Fr.)", "PLN (zł)", "CZK (Kč)", "DKK (kr.)"]
         }
     }
     
-    private func convertLengthToMeter(value: Double, unit: String) -> Double {
-        switch unit {
-        case "Millimeter (mm)": return value / 1000.0
-        case "Zentimeter (cm)": return value / 100.0
-        case "Meter (m)": return value
-        case "Kilometer (km)": return value * 1000.0
-        case "Zoll / Inch (in)": return value * 0.0254
-        case "Fuß (ft)": return value * 0.3048
-        case "Meile (mi)": return value * 1609.34
-        default: return value
-        }
-    }
-    
-    private func convertMeterToTarget(meter: Double, unit: String) -> Double {
-        switch unit {
-        case "Millimeter (mm)": return meter * 1000.0
-        case "Zentimeter (cm)": return meter * 100.0
-        case "Meter (m)": return meter
-        case "Kilometer (km)": return meter / 1000.0
-        case "Zoll / Inch (in)": return meter / 0.0254
-        case "Fuß (ft)": return meter / 0.3048
-        case "Meile (mi)": return meter / 1609.34
-        default: return meter
-        }
-    }
-    
-    private func convertDataToBytes(value: Double, unit: String) -> Double {
-        if unit.contains("Byte (B)") { return value }
-        if unit.contains("KiB") { return value * 1024.0 }
-        if unit.contains("KB") { return value * 1000.0 }
-        if unit.contains("MiB") { return value * pow(1024.0, 2) }
-        if unit.contains("MB") { return value * pow(1000.0, 2) }
-        if unit.contains("GiB") { return value * pow(1024.0, 3) }
-        if unit.contains("GB") { return value * pow(1000.0, 3) }
-        if unit.contains("TiB") { return value * pow(1024.0, 4) }
-        if unit.contains("TB") { return value * pow(1000.0, 4) }
-        if unit.contains("PiB") { return value * pow(1024.0, 5) }
-        if unit.contains("PB") { return value * pow(1000.0, 5) }
-        return value
-    }
-    
-    private func convertBytesToTarget(bytes: Double, unit: String) -> Double {
-        if unit.contains("Byte (B)") { return bytes }
-        if unit.contains("KiB") { return bytes / 1024.0 }
-        if unit.contains("KB") { return bytes / 1000.0 }
-        if unit.contains("MiB") { return bytes / pow(1024.0, 2) }
-        if unit.contains("MB") { return bytes / pow(1000.0, 2) }
-        if unit.contains("GiB") { return bytes / pow(1024.0, 3) }
-        if unit.contains("GB") { return bytes / pow(1000.0, 3) }
-        if unit.contains("TiB") { return bytes / pow(1024.0, 4) }
-        if unit.contains("TB") { return bytes / pow(1000.0, 4) }
-        if unit.contains("PiB") { return bytes / pow(1024.0, 5) }
-        if unit.contains("PB") { return bytes / pow(1000.0, 5) }
-        return bytes
-    }
-    
-    private func convertDataRateToBps(value: Double, unit: String) -> Double {
-        switch unit {
-        case "Bit/s (bps)": return value
-        case "Kbit/s (Kbps)": return value * 1000.0
-        case "Mbit/s (Mbps)": return value * 1_000_000.0
-        case "Gbit/s (Gbps)": return value * 1_000_000_000.0
-        default: return value
-        }
-    }
-    
-    private func convertBpsToTarget(bps: Double, unit: String) -> Double {
-        switch unit {
-        case "Bit/s (bps)": return bps
-        case "Kbit/s (Kbps)": return bps / 1000.0
-        case "Mbit/s (Mbps)": return bps / 1_000_000.0
-        case "Gbit/s (Gbps)": return bps / 1_000_000_000.0
-        default: return bps
-        }
-    }
-    
-    private func convertTemperature(val: Double, from: String, to: String) -> Double {
-        if from == to { return val }
-        var celsius: Double = 0.0
+    private func convertLength(val: Double, from: String, to: String) -> String {
+        var meters: Double = val
+        if from.contains("(mm)") { meters = val / 1000.0 }
+        else if from.contains("(cm)") { meters = val / 100.0 }
+        else if from.contains("(km)") { meters = val * 1000.0 }
+        else if from.contains("(in)") { meters = val * 0.0254 }
+        else if from.contains("(ft)") { meters = val * 0.3048 }
+        else if from.contains("(mi)") { meters = val * 1609.344 }
         
-        switch from {
-        case "Grad Celsius (°C)": celsius = val
-        case "Grad Fahrenheit (°F)": celsius = (val - 32.0) * (5.0 / 9.0)
-        case "Kelvin (K)": celsius = val - 273.15
-        default: break
-        }
+        var result: Double = meters
+        if to.contains("(mm)") { result = meters * 1000.0 }
+        else if to.contains("(cm)") { result = meters * 100.0 }
+        else if to.contains("(km)") { result = meters / 1000.0 }
+        else if to.contains("(in)") { result = meters / 0.0254 }
+        else if to.contains("(ft)") { result = meters / 0.3048 }
+        else if to.contains("(mi)") { result = meters / 1609.344 }
         
-        switch to {
-        case "Grad Celsius (°C)": return celsius
-        case "Grad Fahrenheit (°F)": return (celsius * 9.0 / 5.0) + 32.0
-        case "Kelvin (K)": return celsius + 273.15
-        default: return celsius
+        return formatOutput(result)
+    }
+    
+    private func convertMass(val: Double, from: String, to: String) -> String {
+        var grams: Double = val
+        if from.contains("(kg)") { grams = val * 1000.0 }
+        else if from.contains("(t)") { grams = val * 1_000_000.0 }
+        else if from.contains("(oz)") { grams = val * 28.3495 }
+        else if from.contains("(lb)") { grams = val * 453.592 }
+        
+        var result: Double = grams
+        if to.contains("(kg)") { result = grams / 1000.0 }
+        else if to.contains("(t)") { result = grams / 1_000_000.0 }
+        else if to.contains("(oz)") { result = grams / 28.3495 }
+        else if to.contains("(lb)") { result = grams / 453.592 }
+        
+        return formatOutput(result)
+    }
+    
+    private func convertTemperature(val: Double, from: String, to: String) -> String {
+        var celsius: Double = val
+        if from.contains("°F") { celsius = (val - 32.0) * (5.0 / 9.0) }
+        else if from.contains("K") { celsius = val - 273.15 }
+        
+        var result: Double = celsius
+        if to.contains("°F") { result = (celsius * 9.0 / 5.0) + 32.0 }
+        else if to.contains("K") { result = celsius + 273.15 }
+        
+        return String(format: "%.2f", result).replacingOccurrences(of: ".", with: ",")
+    }
+    
+    private func convertDataRate(val: Double, from: String, to: String) -> String {
+        var bps: Double = val
+        if from.contains("Kbps") { bps = val * 1000.0 }
+        else if from.contains("Mbps") { bps = val * 1_000_000.0 }
+        else if from.contains("Gbps") { bps = val * 1_000_000_000.0 }
+        
+        var result: Double = bps
+        if to.contains("Kbps") { result = bps / 1000.0 }
+        else if to.contains("Mbps") { result = bps / 1_000_000.0 }
+        else if to.contains("Gbps") { result = bps / 1_000_000_000.0 }
+        
+        return formatOutput(result)
+    }
+    
+    private func convertStorage(val: Double, from: String, to: String) -> String {
+        var bytes: Double = val
+        if from.contains("(KB)") { bytes = val * 1000.0 }
+        else if from.contains("(MB)") { bytes = val * 1_000_000.0 }
+        else if from.contains("(GB)") { bytes = val * 1_000_000_000.0 }
+        else if from.contains("(KiB)") { bytes = val * 1024.0 }
+        else if from.contains("(MiB)") { bytes = val * 1_048_576.0 }
+        else if from.contains("(GiB)") { bytes = val * 1_073_741_824.0 }
+        
+        var result: Double = bytes
+        if to.contains("(KB)") { result = bytes / 1000.0 }
+        else if to.contains("(MB)") { result = bytes / 1_000_000.0 }
+        else if to.contains("(GB)") { result = bytes / 1_000_000_000.0 }
+        else if to.contains("(KiB)") { result = bytes / 1024.0 }
+        else if to.contains("(MiB)") { result = bytes / 1_048_576.0 }
+        else if to.contains("(GiB)") { result = bytes / 1_073_741_824.0 }
+        
+        return formatOutput(result)
+    }
+    
+    private func convertCurrency(val: Double, from: String, to: String) -> String {
+        let ratesToEUR: [String: Double] = [
+            "EUR": 1.0,
+            "USD": 1.08,
+            "GBP": 0.85,
+            "CHF": 0.95,
+            "PLN": 4.32,
+            "CZK": 25.20,
+            "DKK": 7.46
+        ]
+        
+        let fromCode = String(from.prefix(3))
+        let toCode = String(to.prefix(3))
+        
+        guard let rateFrom = ratesToEUR[fromCode], let rateTo = ratesToEUR[toCode] else { return "0,00" }
+        let eurVal = val / rateFrom
+        let result = eurVal * rateTo
+        
+        return String(format: "%.2f", result).replacingOccurrences(of: ".", with: ",")
+    }
+    
+    private func formatOutput(_ val: Double) -> String {
+        if val.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(format: "%.0f", val)
+        } else {
+            return String(format: "%.4f", val).replacingOccurrences(of: ".", with: ",")
         }
     }
 }
