@@ -1,3 +1,5 @@
+// xcode: set sdk=iOS
+
 import SwiftUI
 
 enum CalculatorMode: String, CaseIterable, Identifiable {
@@ -13,28 +15,71 @@ enum CalculatorMode: String, CaseIterable, Identifiable {
     var id: String { self.rawValue }
 }
 
+enum AppTheme: String, CaseIterable, Identifiable {
+    case proDark = "Pro Dark"
+    case cyberPurple = "Cyber Purple"
+    case classicApple = "Classic Apple"
+    case matrixGreen = "Matrix Green"
+    
+    var id: String { self.rawValue }
+    
+    var digitButtonColor: Color {
+        switch self {
+        case .proDark: return Color(UIColor.darkGray)
+        case .cyberPurple: return Color(UIColor.systemPurple).opacity(0.8)
+        case .classicApple: return Color(UIColor.systemGray)
+        case .matrixGreen: return Color(UIColor.systemGreen).opacity(0.2)
+        }
+    }
+    
+    var operatorButtonColor: Color {
+        switch self {
+        case .proDark, .classicApple: return .orange
+        case .cyberPurple: return .purple
+        case .matrixGreen: return .green
+        }
+    }
+}
+
+struct HistoryItem: Identifiable {
+    let id = UUID()
+    let expression: String
+    let result: String
+}
+
+struct PhysicsConstant: Identifiable {
+    let id = UUID()
+    let name: String
+    let symbol: String
+    let value: Double
+    let unit: String
+}
+
 struct ContentView: View {
     @State private var selectedMode: CalculatorMode = .basic
+    @State private var currentTheme: AppTheme = .matrixGreen
+    
     @State private var displayValue: String = "0"
     @State private var formulaDisplay: String = ""
     @State private var formulaExpression: String = ""
     @State private var isTypingNewNumber: Bool = true
     @State private var hasEvaluatedResult: Bool = false
     
-    // Modus-Steuerung: Punkt-vor-Strich vs. Tischrechner
     @State private var useOrderOfOperations: Bool = true
-    
-    // Winkelfunktionen-Modus: DEG (Grad) vs. RAD (Bogenmaß)
     @State private var useRadDegrees: Bool = false
     
-    // ASCII Reverse Input State
-    @State private var asciiInputChar: String = "A"
-    
-    // Memory Status
     @State private var memoryValue: Double = 0.0
     @State private var hasMemory: Bool = false
     
-    // Alert 42
+    // Sheets
+    @State private var history: [HistoryItem] = []
+    @State private var showHistorySheet: Bool = false
+    @State private var showSettingsSheet: Bool = false
+    @State private var showConstantsSheet: Bool = false
+    
+    // Dice State
+    @State private var selectedDiceSides: Int = 6
+    
     @State private var showNerdFact: Bool = false
     @State private var currentFact: String = ""
     
@@ -43,102 +88,130 @@ struct ContentView: View {
         "In ASCII entspricht 42 dem Sternchen (*).",
         "42 ist die Summe der ersten 6 geraden Zahlen: 2 + 4 + 6 + 8 + 10 + 12."
     ]
+    
+    let physicsConstants: [PhysicsConstant] = [
+        PhysicsConstant(name: "Lichtgeschwindigkeit", symbol: "c", value: 299792458, unit: "m/s"),
+        PhysicsConstant(name: "Gravitationskonstante", symbol: "G", value: 6.67430e-11, unit: "m³/(kg·s²)"),
+        PhysicsConstant(name: "Planck-Wirkungsquantum", symbol: "h", value: 6.62607015e-34, unit: "J·s"),
+        PhysicsConstant(name: "Elementarladung", symbol: "e", value: 1.602176634e-19, unit: "C"),
+        PhysicsConstant(name: "Avogadro-Konstante", symbol: "N_A", value: 6.02214076e23, unit: "mol⁻¹"),
+        PhysicsConstant(name: "Boltzmann-Konstante", symbol: "k_B", value: 1.380649e-23, unit: "J/K"),
+        PhysicsConstant(name: "Euler'sche Zahl", symbol: "e", value: Double(M_E), unit: "Zahl"),
+        PhysicsConstant(name: "Kreiszahl", symbol: "π", value: Double.pi, unit: "Zahl")
+    ]
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             
-            // 1. MODUS SELECTION & EINSTELLUNGEN
-            VStack(spacing: 6) {
-                HStack {
-                    Text("Modus:")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
-                    
-                    Spacer()
-                    
-                    Picker("Modus", selection: $selectedMode) {
-                        ForEach(CalculatorMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
+            // 1. HEADER
+            HStack(spacing: 4) {
+                Picker("Modus", selection: $selectedMode) {
+                    ForEach(CalculatorMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
                     }
-                    .pickerStyle(.menu)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color(UIColor.tertiarySystemBackground))
-                    .cornerRadius(8)
                 }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color(UIColor.tertiarySystemBackground))
+                .cornerRadius(8)
+                .fixedSize()
+                
+                Button(action: { showHistorySheet = true }) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 14, weight: .bold))
+                        .padding(6)
+                        .background(Color(UIColor.tertiarySystemBackground))
+                        .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
+                        .cornerRadius(8)
+                }
+                
+                Button(action: { showSettingsSheet = true }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .padding(6)
+                        .background(Color(UIColor.tertiarySystemBackground))
+                        .foregroundColor(.gray)
+                        .cornerRadius(8)
+                }
+                
+                Spacer(minLength: 4)
                 
                 if selectedMode == .basic || selectedMode == .scientific {
-                    HStack {
-                        Toggle(isOn: $useOrderOfOperations) {
-                            Text(useOrderOfOperations ? "Punkt-vor-Strich (Math)" : "Tischrechner (Sequentiell)")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.secondary)
-                        }
-                        .toggleStyle(SwitchToggleStyle(tint: .orange))
+                    Toggle(isOn: $useOrderOfOperations) {
+                        Text(useOrderOfOperations ? "Math" : "Tisch")
+                            .font(.caption2)
+                            .fontWeight(.bold)
                     }
-                    .padding(.horizontal, 4)
+                    .toggleStyle(.button)
+                    .tint(currentTheme.operatorButtonColor)
                 }
                 
-                // DEG / RAD Umschalter im Scientific-Modus
                 if selectedMode == .scientific {
-                    HStack {
-                        Text("Winkelmaß:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Picker("Winkelmaß", selection: $useRadDegrees) {
-                            Text("DEG (Grad)").tag(false)
-                            Text("RAD (Rad)").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 160)
+                    Picker("Winkel", selection: $useRadDegrees) {
+                        Text("DEG").tag(false)
+                        Text("RAD").tag(true)
                     }
-                    .padding(.horizontal, 4)
+                    .pickerStyle(.segmented)
+                    .frame(width: 85)
                 }
             }
-            .padding(.horizontal)
-            .padding(.top, 4)
+            .padding(.horizontal, 8)
+            .padding(.top, 2)
             
-            // 2. DISPLAY BEREICH
-            VStack(alignment: .trailing, spacing: 4) {
+            // 2. DAS ECHTE 4-ZEILIGE PRO-DISPLAY (Visuell klar strukturiert)
+            VStack(alignment: .trailing, spacing: 3) {
+                // Zeile 1: Modus & System-Status
+                HStack {
+                    Text("SYS: READY")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(.green)
+                    Spacer()
+                    Text("MODE: \(selectedMode.rawValue)")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(.secondary)
+                    if selectedMode == .scientific {
+                        Text("• \(useRadDegrees ? "RAD" : "DEG")")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(.orange)
+                    }
+                }
+                
+                // Zeile 2: Formelanzeige
+                Text(formulaDisplay.isEmpty ? " " : formulaDisplay)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.gray)
+                    .lineLimit(1)
+                
+                // Zeile 3: Register / Speicher / Status Info
                 HStack {
                     if hasMemory {
-                        Text("M (\(formatResult(memoryValue)))")
-                            .font(.caption)
-                            .fontWeight(.bold)
+                        Text("MEM: \(formatResult(memoryValue))")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundColor(.orange)
                     }
                     Spacer()
-                    Text(formulaDisplay)
-                        .font(.system(size: 14, design: .monospaced))
-                        .foregroundColor(.gray)
-                        .lineLimit(1)
-                }
-                
-                HStack(alignment: .firstTextBaseline) {
                     if displayValue == "42" || displayValue == "42,0" || displayValue == "42.0" {
                         Text("(Ultimate Answer)")
-                            .font(.caption)
-                            .fontWeight(.bold)
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.purple)
                     }
-                    Spacer()
-                    Text(displayValue)
-                        .font(.system(size: 32, weight: .bold, design: .monospaced))
-                        .minimumScaleFactor(0.4)
-                        .lineLimit(1)
-                        .foregroundColor(.primary)
                 }
+                
+                // Zeile 4: Großer Haupt-Ausgabewert
+                Text(displayValue)
+                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                    .minimumScaleFactor(0.35)
+                    .lineLimit(1)
+                    .foregroundColor(currentTheme == .matrixGreen ? .green : .primary)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(Color(UIColor.secondarySystemBackground))
-            .cornerRadius(14)
-            .padding(.horizontal)
+            .cornerRadius(10)
+            .padding(.horizontal, 8)
             
             // 3. DYNAMISCHER INHALT
             Group {
@@ -166,89 +239,245 @@ struct ContentView: View {
         .alert(isPresented: $showNerdFact) {
             Alert(title: Text("42 – Die Antwort auf ALLES"), message: Text(currentFact), dismissButton: .default(Text("OK")))
         }
+        .sheet(isPresented: $showHistorySheet) {
+            historySheetView
+        }
+        .sheet(isPresented: $showSettingsSheet) {
+            settingsSheetView
+        }
+        .sheet(isPresented: $showConstantsSheet) {
+            constantsSheetView
+        }
     }
     
-    // MARK: - Basic Tastatur Grid
+    // MARK: - Constants Sheet
+    private var constantsSheetView: some View {
+        NavigationView {
+            List(physicsConstants) { item in
+                Button(action: {
+                    let valStr = String(item.value)
+                    appendDigit(valStr)
+                    showConstantsSheet = false
+                }) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.name)
+                                .font(.body)
+                                .fontWeight(.bold)
+                                .foregroundColor(.primary)
+                            Text("\(item.symbol) = \(item.value) \(item.unit)")
+                                .font(.caption)
+                                .fontDesign(.monospaced)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.blue)
+                    }
+                }
+            }
+            .navigationTitle("Naturkonstanten")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Fertig") { showConstantsSheet = false }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Settings / Theme Sheet
+    private var settingsSheetView: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Design & Theme")) {
+                    Picker("Farb-Stimmung", selection: $currentTheme) {
+                        ForEach(AppTheme.allCases) { theme in
+                            Text(theme.rawValue).tag(theme)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                
+                Section(header: Text("Würfel-Einstellungen")) {
+                    Picker("Würfel-Seiten", selection: $selectedDiceSides) {
+                        Text("d6 (6-seitig)").tag(6)
+                        Text("d10 (10-seitig)").tag(10)
+                        Text("d20 (20-seitig)").tag(20)
+                        Text("d100 (100-seitig)").tag(100)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                
+                Section(header: Text("Über TheCalculator 2.0")) {
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text("2.0 (Build 2026.11)")
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("Entwickler")
+                        Spacer()
+                        Text("maKI Edition / Steffen")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Einstellungen & Themes")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Fertig") { showSettingsSheet = false }
+                }
+            }
+        }
+    }
+    
+    // MARK: - History Sheet
+    private var historySheetView: some View {
+        NavigationView {
+            List {
+                if history.isEmpty {
+                    Text("Noch keine Berechnungen im Verlauf")
+                        .foregroundColor(.secondary)
+                        .italic()
+                } else {
+                    ForEach(history.reversed()) { item in
+                        Button(action: {
+                            displayValue = item.result
+                            formulaExpression = item.result
+                            formulaDisplay = "\(item.expression) ="
+                            showHistorySheet = false
+                        }) {
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text(item.expression)
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                Text("= \(item.result)")
+                                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.primary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                    }
+                    .onDelete(perform: deleteHistoryItem)
+                }
+            }
+            .navigationTitle("Rechenverlauf (Tape)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if !history.isEmpty {
+                        Button("Löschen") { history.removeAll() }
+                            .foregroundColor(.red)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Fertig") { showHistorySheet = false }
+                }
+            }
+        }
+    }
+    
+    private func deleteHistoryItem(at offsets: IndexSet) {
+        let reversedIndices = offsets.map { history.count - 1 - $0 }
+        for index in reversedIndices {
+            history.remove(at: index)
+        }
+    }
+    
+    // MARK: - Basic Tastatur Grid (Inkl. KLAMMER ( & SWAP)
     private var basicCalculatorGrid: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                calcButton("MC", color: .gray) { memoryClear() }
-                calcButton("MR", color: .gray) { memoryRecall() }
-                calcButton("M+", color: .gray) { memoryAdd() }
-                calcButton("M-", color: .gray) { memorySub() }
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                calcButton("MC", color: Color(UIColor.systemGray4), textColor: .primary) { memoryClear() }
+                calcButton("MR", color: Color(UIColor.systemGray4), textColor: .primary) { memoryRecall() }
+                calcButton("M+", color: Color(UIColor.systemGray4), textColor: .primary) { memoryAdd() }
+                calcButton("M-", color: Color(UIColor.systemGray4), textColor: .primary) { memorySub() }
             }
-            HStack(spacing: 8) {
-                calcButton("C", color: .red) { clear() }
-                calcButton("(", color: .gray) { appendSymbol("(") }
-                calcButton(")", color: .gray) { appendSymbol(")") }
-                calcButton("%", color: .gray) { applySmartPercentage() }
+            HStack(spacing: 4) {
+                calcButton("C", color: Color(UIColor.systemRed)) { clear() }
+                calcButton("(", color: Color(UIColor.systemGray2)) { appendSymbol("(") }
+                calcButton(")", color: Color(UIColor.systemGray2)) { appendSymbol(")") }
+                calcButton("%", color: Color(UIColor.systemGray2)) { applySmartPercentage() }
             }
-            HStack(spacing: 8) {
-                calcButton("7") { appendDigit("7") }
-                calcButton("8") { appendDigit("8") }
-                calcButton("9") { appendDigit("9") }
-                calcButton("÷", color: .orange) { appendSymbol("÷") }
+            HStack(spacing: 4) {
+                calcButton("7", color: currentTheme.digitButtonColor) { appendDigit("7") }
+                calcButton("8", color: currentTheme.digitButtonColor) { appendDigit("8") }
+                calcButton("9", color: currentTheme.digitButtonColor) { appendDigit("9") }
+                calcButton("÷", color: currentTheme.operatorButtonColor) { appendSymbol("÷") }
             }
-            HStack(spacing: 8) {
-                calcButton("4") { appendDigit("4") }
-                calcButton("5") { appendDigit("5") }
-                calcButton("6") { appendDigit("6") }
-                calcButton("×", color: .orange) { appendSymbol("×") }
+            HStack(spacing: 4) {
+                calcButton("4", color: currentTheme.digitButtonColor) { appendDigit("4") }
+                calcButton("5", color: currentTheme.digitButtonColor) { appendDigit("5") }
+                calcButton("6", color: currentTheme.digitButtonColor) { appendDigit("6") }
+                calcButton("×", color: currentTheme.operatorButtonColor) { appendSymbol("×") }
             }
-            HStack(spacing: 8) {
-                calcButton("1") { appendDigit("1") }
-                calcButton("2") { appendDigit("2") }
-                calcButton("3") { appendDigit("3") }
-                calcButton("-", color: .orange) { appendSymbol("-") }
+            HStack(spacing: 4) {
+                calcButton("1", color: currentTheme.digitButtonColor) { appendDigit("1") }
+                calcButton("2", color: currentTheme.digitButtonColor) { appendDigit("2") }
+                calcButton("3", color: currentTheme.digitButtonColor) { appendDigit("3") }
+                calcButton("-", color: currentTheme.operatorButtonColor) { appendSymbol("-") }
             }
-            HStack(spacing: 8) {
-                calcButton("0") { appendDigit("0") }
-                calcButton(",") { appendComma() }
-                calcButton("DEL", color: .red) { deleteLastChar() }
-                calcButton("+", color: .orange) { appendSymbol("+") }
+            HStack(spacing: 4) {
+                calcButton("0", color: currentTheme.digitButtonColor) { appendDigit("0") }
+                calcButton(",", color: currentTheme.digitButtonColor) { appendComma() }
+                calcButton("DEL", color: Color(UIColor.systemRed)) { deleteLastChar() }
+                calcButton("+", color: currentTheme.operatorButtonColor) { appendSymbol("+") }
             }
             
             GeometryReader { geo in
-                HStack(spacing: 8) {
-                    calcButton("42", color: .purple) { trigger42Fact() }
-                        .frame(width: (geo.size.width - 8) * 0.25)
+                HStack(spacing: 4) {
+                    calcButton("SWAP", color: .indigo) { swapOperands() }
+                        .frame(width: (geo.size.width - 8) * 0.20)
                     
-                    calcButton("=", color: .orange) { calculateResult() }
-                        .frame(width: (geo.size.width - 8) * 0.75)
+                    calcButton("42", color: .purple) { trigger42Fact() }
+                        .frame(width: (geo.size.width - 8) * 0.20)
+                    
+                    calcButton("=", color: currentTheme.operatorButtonColor) { calculateResult() }
+                        .frame(width: (geo.size.width - 8) * 0.60)
                 }
             }
-            .frame(height: 52)
+            .frame(height: 42)
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 8)
     }
     
-    // MARK: - Scientific Tastatur Grid
+    // MARK: - Scientific Tastatur Grid (INHALTE ERHALTEN!)
     private var scientificCalculatorGrid: some View {
-        VStack(spacing: 8) {
-            VStack(spacing: 4) {
-                HStack(spacing: 4) {
+        VStack(spacing: 4) {
+            VStack(spacing: 3) {
+                HStack(spacing: 3) {
                     squareScientificButton("sin") { applyScientificFunc("sin") }
                     squareScientificButton("cos") { applyScientificFunc("cos") }
                     squareScientificButton("tan") { applyScientificFunc("tan") }
                     squareScientificButton("asin") { applyScientificFunc("asin") }
                     squareScientificButton("acos") { applyScientificFunc("acos") }
                 }
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     squareScientificButton("atan") { applyScientificFunc("atan") }
                     squareScientificButton("x²") { applyScientificFunc("square") }
                     squareScientificButton("xʸ") { appendSymbol("^") }
                     squareScientificButton("√") { applyScientificFunc("sqrt") }
                     squareScientificButton("n!") { applyScientificFunc("factorial") }
                 }
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     squareScientificButton("ln") { applyScientificFunc("ln") }
                     squareScientificButton("log") { applyScientificFunc("log10") }
                     squareScientificButton("e") { appendDigit(String(M_E)) }
                     squareScientificButton("π") { appendDigit(String(Double.pi)) }
+                    squareScientificButton("CONST") { showConstantsSheet = true }
+                }
+                HStack(spacing: 3) {
+                    squareScientificButton("rnd") { generateRandomFloat() }
+                    squareScientificButton("🎲d\(selectedDiceSides)") { generateDiceRoll() }
+                    squareScientificButton("Rnd100") { generateRandomInt100() }
                     squareScientificButton("mod") { appendSymbol("mod") }
+                    squareScientificButton("1/x") { applyReciprocal() }
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 8)
             
             basicCalculatorGrid
         }
@@ -260,10 +489,9 @@ struct ContentView: View {
             action()
         }) {
             Text(label)
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 11, weight: .bold))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .aspectRatio(1.0, contentMode: .fit)
-                .background(Color.purple)
+                .background(Color(UIColor.systemIndigo))
                 .foregroundColor(.white)
                 .cornerRadius(6)
         }
@@ -272,97 +500,136 @@ struct ContentView: View {
     
     // MARK: - Base / Hex View
     private var hexBinView: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Bitweise Logik-Operationen").font(.subheadline).fontWeight(.bold).foregroundColor(.purple)
-                    Divider()
-                    HStack(spacing: 6) {
-                        calcButton("AND", color: .indigo) { applyBitwiseOp("&") }
-                        calcButton("OR", color: .indigo) { applyBitwiseOp("|") }
-                        calcButton("XOR", color: .indigo) { applyBitwiseOp("^") }
-                        calcButton("NOT", color: .indigo) { applyBitwiseNot() }
-                        calcButton("<<", color: .indigo) { applyBitwiseOp("<<") }
-                        calcButton(">>", color: .indigo) { applyBitwiseOp(">>") }
+        VStack(spacing: 4) {
+            ScrollView {
+                VStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Bitweise Logik-Operationen").font(.caption).fontWeight(.bold).foregroundColor(.blue)
+                        HStack(spacing: 4) {
+                            calcButton("AND", color: Color(UIColor.systemBlue)) { applyBitwiseOp("&") }
+                            calcButton("OR", color: Color(UIColor.systemBlue)) { applyBitwiseOp("|") }
+                            calcButton("XOR", color: Color(UIColor.systemBlue)) { applyBitwiseOp("^") }
+                            calcButton("NOT", color: Color(UIColor.systemBlue)) { applyBitwiseNot() }
+                            calcButton("<<", color: Color(UIColor.systemBlue)) { applyBitwiseOp("<<") }
+                            calcButton(">>", color: Color(UIColor.systemBlue)) { applyBitwiseOp(">>") }
+                        }
+                        .frame(height: 32)
                     }
-                    .frame(height: 38)
-                }
-                .padding()
-                .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(12)
-                
-                if let val = Int64(displayValue.replacingOccurrences(of: ",", with: ".")) {
-                    let res = BaseCalculator.convert(value: val)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Display-Zahl → Basen & ASCII").font(.subheadline).fontWeight(.bold).foregroundColor(.blue)
-                        Divider()
-                        Text("Dezimal: \(res.dec)").monospaced()
-                        Text("Hexadezimal: \(res.hex)").monospaced()
-                        Text("Binär: \(res.bin)").monospaced()
-                        if val >= 32 && val <= 126, let unicode = UnicodeScalar(Int(val)) {
-                            Text("ASCII-Zeichen: '\(Character(unicode))'").monospaced().foregroundColor(.green).fontWeight(.bold)
+                    .padding(8)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(8)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Basen & ASCII").font(.caption).fontWeight(.bold).foregroundColor(.blue)
+                        
+                        let cleanText = displayValue.replacingOccurrences(of: ",", with: ".")
+                        if let val = Double(cleanText), val <= Double(Int64.max) && val >= Double(Int64.min) {
+                            let intVal = Int64(val)
+                            let res = BaseCalculator.convert(value: intVal)
+                            Text("DEC: \(res.dec)").font(.system(size: 13, design: .monospaced))
+                            Text("HEX: \(res.hex)").font(.system(size: 13, design: .monospaced))
+                            Text("BIN: \(res.bin)").font(.system(size: 13, design: .monospaced))
+                            if intVal >= 32 && intVal <= 126, let unicode = UnicodeScalar(Int(intVal)) {
+                                Text("ASCII: '\(Character(unicode))'").font(.system(size: 13, design: .monospaced)).foregroundColor(.green).fontWeight(.bold)
+                            } else {
+                                Text("ASCII: (Nicht druckbar)").font(.caption2).foregroundColor(.secondary)
+                            }
                         } else {
-                            Text("ASCII-Zeichen: (Nicht druckbar)").font(.caption).foregroundColor(.secondary)
+                            Text("Bereichsüberschreitung (Overflow)").font(.caption).foregroundColor(.red).bold()
+                            Text("Wert zu groß für Int64-Konvertierung").font(.caption2).foregroundColor(.secondary)
                         }
                     }
-                    .padding()
+                    .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(UIColor.secondarySystemBackground))
-                    .cornerRadius(12)
+                    .cornerRadius(8)
                 }
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Reverse ASCII (Zeichen → Code)").font(.subheadline).fontWeight(.bold).foregroundColor(.orange)
-                    Divider()
-                    HStack {
-                        Text("Zeichen eingeben:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        TextField("A", text: $asciiInputChar)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 50)
-                            .multilineTextAlignment(.center)
-                            .onChange(of: asciiInputChar) { newValue in
-                                if newValue.count > 1 { asciiInputChar = String(newValue.prefix(1)) }
-                            }
-                    }
-                    
-                    if let firstChar = asciiInputChar.first, let asciiVal = firstChar.asciiValue {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Dezimal: \(asciiVal)").monospaced().fontWeight(.semibold)
-                            Text("Hexadezimal: 0x\(String(asciiVal, radix: 16, uppercase: true))").monospaced()
-                            Text("Binär: 0b\(String(asciiVal, radix: 2))").monospaced()
-                        }
-                        .padding(.top, 4)
-                    }
-                }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(12)
+                .padding(.horizontal, 8)
             }
-            .padding(.horizontal)
+            
+            HStack(spacing: 3) {
+                calcButton("A", color: Color(UIColor.systemPurple)) { appendDigit("A") }
+                calcButton("B", color: Color(UIColor.systemPurple)) { appendDigit("B") }
+                calcButton("C", color: Color(UIColor.systemPurple)) { appendDigit("C") }
+                calcButton("D", color: Color(UIColor.systemPurple)) { appendDigit("D") }
+                calcButton("E", color: Color(UIColor.systemPurple)) { appendDigit("E") }
+                calcButton("F", color: Color(UIColor.systemPurple)) { appendDigit("F") }
+            }
+            .frame(height: 32)
+            .padding(.horizontal, 8)
+            
+            basicCalculatorGrid
         }
     }
     
     // MARK: - Button Generator
-    private func calcButton(_ label: String, color: Color = .blue, action: @escaping () -> Void) -> some View {
+    private func calcButton(_ label: String, color: Color = .blue, textColor: Color = .white, action: @escaping () -> Void) -> some View {
         Button(action: {
             hideKeyboard()
             action()
         }) {
             Text(label)
-                .font(.system(size: 16, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(color)
-                .foregroundColor(.white)
-                .cornerRadius(8)
+                .foregroundColor(textColor)
+                .cornerRadius(6)
         }
         .buttonStyle(.plain)
     }
     
-    // MARK: - ABGESICHERTE EINGABELOGIK
+    // MARK: - MATH & RANDOM HELPER
+    private func generateRandomFloat() {
+        let rndVal = Double.random(in: 0.0...1.0)
+        let formatted = formatResult(rndVal)
+        displayValue = formatted
+        formulaExpression = formatted
+        isTypingNewNumber = true
+    }
+    
+    private func generateDiceRoll() {
+        let roll = Int.random(in: 1...selectedDiceSides)
+        displayValue = String(roll)
+        formulaExpression = String(roll)
+        isTypingNewNumber = true
+    }
+    
+    private func generateRandomInt100() {
+        let roll = Int.random(in: 1...100)
+        displayValue = String(roll)
+        formulaExpression = String(roll)
+        isTypingNewNumber = true
+    }
+    
+    private func applyReciprocal() {
+        guard let val = Double(displayValue.replacingOccurrences(of: ",", with: ".")), val != 0 else {
+            displayValue = "Division durch 0"
+            isTypingNewNumber = true
+            return
+        }
+        let res = 1.0 / val
+        displayValue = formatResult(res)
+        formulaDisplay = "1/(\(formatResult(val))) ="
+        formulaExpression = formatResult(res)
+        hasEvaluatedResult = true
+        isTypingNewNumber = true
+    }
+    
+    // MARK: - SWAP OPERANDS LOGIK
+    private func swapOperands() {
+        let tokens = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
+        if tokens.count == 3 {
+            let left = tokens[0]
+            let op = tokens[1]
+            let right = tokens[2]
+            
+            formulaExpression = "\(right) \(op) \(left)"
+            formulaDisplay = formulaExpression
+            displayValue = right
+        }
+    }
+    
+    // MARK: - EINGABELOGIK
     private func appendDigit(_ digit: String) {
         if hasEvaluatedResult {
             displayValue = digit
@@ -466,6 +733,7 @@ struct ContentView: View {
                 formulaDisplay = "\(formatResult(baseVal)) × \(formatResult(current))% ="
                 formulaExpression = formatResult(res)
                 hasEvaluatedResult = true
+                history.append(HistoryItem(expression: "\(formatResult(baseVal)) × \(formatResult(current))%", result: formatResult(res)))
             } else {
                 let pct = current / 100.0
                 displayValue = formatResult(pct)
@@ -484,15 +752,29 @@ struct ContentView: View {
         displayValue = String(~val)
     }
     
-    // MARK: - ABSOLUT ABGESICHERTER EVALUATOR
+    // MARK: - EVALUATOR
     private func calculateResult() {
         let cleanExpr = formulaExpression.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
         
-        // Prüfen auf explizite Division durch 0
         if cleanExpr.contains("/ 0") || cleanExpr.contains("÷ 0") {
             displayValue = "Division durch 0 nicht möglich"
             isTypingNewNumber = true
             hasEvaluatedResult = true
+            return
+        }
+        
+        if containsHexOrBitwise(cleanExpr) {
+            if let hexResult = evaluateBitwiseExpression(cleanExpr) {
+                let resStr = String(hexResult)
+                displayValue = resStr
+                formulaDisplay = "\(formulaExpression) ="
+                history.append(HistoryItem(expression: formulaExpression, result: resStr))
+                formulaExpression = resStr
+            } else {
+                displayValue = "Syntaxfehler"
+            }
+            hasEvaluatedResult = true
+            isTypingNewNumber = true
             return
         }
         
@@ -507,9 +789,11 @@ struct ContentView: View {
             if res.isInfinite || res.isNaN {
                 displayValue = "Ungültiger Wert"
             } else {
-                displayValue = formatResult(res)
+                let formattedRes = formatResult(res)
+                displayValue = formattedRes
                 formulaDisplay = "\(formulaExpression) ="
-                formulaExpression = formatResult(res)
+                history.append(HistoryItem(expression: formulaExpression, result: formattedRes))
+                formulaExpression = formattedRes
             }
             hasEvaluatedResult = true
             isTypingNewNumber = true
@@ -520,17 +804,49 @@ struct ContentView: View {
         }
     }
     
+    private func containsHexOrBitwise(_ expr: String) -> Bool {
+        let bitwiseOps = ["&", "|", "^", "<<", ">>"]
+        let hexChars = ["A", "B", "C", "D", "E", "F"]
+        return bitwiseOps.contains(where: { expr.contains($0) }) || hexChars.contains(where: { expr.contains($0) })
+    }
+    
+    private func evaluateBitwiseExpression(_ expr: String) -> Int64? {
+        let tokens = expr.components(separatedBy: " ").filter { !$0.isEmpty }
+        if tokens.count == 3 {
+            let op = tokens[1]
+            guard let val1 = Int64(tokens[0], radix: 16) ?? Int64(tokens[0]),
+                  let val2 = Int64(tokens[2], radix: 16) ?? Int64(tokens[2]) else { return nil }
+            
+            switch op {
+            case "&": return val1 & val2
+            case "|": return val1 | val2
+            case "^": return val1 ^ val2
+            case "<<": return val1 << min(val2, 63)
+            case ">>": return val1 >> min(val2, 63)
+            default: break
+            }
+        } else if tokens.count == 1, let val = Int64(tokens[0], radix: 16) ?? Int64(tokens[0]) {
+            return val
+        }
+        return nil
+    }
+
     private func evaluateMathExpression(_ expr: String) -> Double? {
         var clean = expr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
         
-        // Führende Operatoren abfangen
         while clean.hasPrefix("×") || clean.hasPrefix("÷") || clean.hasPrefix("*") || clean.hasPrefix("/") || clean.hasPrefix("%") {
             clean = String(clean.dropFirst()).trimmingCharacters(in: .whitespaces)
         }
         
         guard !clean.isEmpty else { return nil }
         
-        // Potenzierung x^y direkt auflösen
+        if containsHexOrBitwise(clean) {
+            if let bitRes = evaluateBitwiseExpression(clean) {
+                return Double(bitRes)
+            }
+            return nil
+        }
+        
         let tokens = clean.components(separatedBy: " ").filter { !$0.isEmpty }
         if tokens.count == 3 && tokens[1] == "^" {
             if let a = Double(tokens[0]), let b = Double(tokens[2]) {
@@ -538,7 +854,6 @@ struct ContentView: View {
             }
         }
         
-        // Mehrgliedriges Modulo auflösen (z.B. "60 * 9 mod 6" -> "540 mod 6" -> 0)
         if clean.contains("mod") || clean.contains("%") {
             let modSymbol = clean.contains("mod") ? "mod" : "%"
             let parts = clean.components(separatedBy: " \(modSymbol) ")
@@ -605,12 +920,10 @@ struct ContentView: View {
         return runningResult
     }
     
-    // Scientific-Funktionen mit mathematischen Schutzschaltern
     private func applyScientificFunc(_ function: String) {
         guard let val = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
         var res: Double = 0.0
         
-        // Grad vs. Bogenmaß Umrechnungsfaktor
         let angleMultiplier = useRadDegrees ? 1.0 : (.pi / 180.0)
         let invAngleMultiplier = useRadDegrees ? 1.0 : (180.0 / .pi)
         
@@ -641,9 +954,12 @@ struct ContentView: View {
         default: break
         }
         
-        formulaDisplay = "\(function)(\(formatResult(val))) ="
-        displayValue = formatResult(res)
-        formulaExpression = formatResult(res)
+        let exprStr = "\(function)(\(formatResult(val)))"
+        formulaDisplay = "\(exprStr) ="
+        let resStr = formatResult(res)
+        displayValue = resStr
+        formulaExpression = resStr
+        history.append(HistoryItem(expression: exprStr, result: resStr))
         hasEvaluatedResult = true
         isTypingNewNumber = true
     }
@@ -675,5 +991,9 @@ struct ContentView: View {
         } else {
             return String(format: "%.4f", val).replacingOccurrences(of: ".", with: ",")
         }
+    }
+    
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
