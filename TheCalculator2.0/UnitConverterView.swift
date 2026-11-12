@@ -4,9 +4,10 @@ import SwiftUI
 
 struct UnitConverterView: View {
     @State private var inputValue: String = "1"
-    @State private var selectedCategory: UnitCategory = .mass
-    @State private var sourceUnit: String = "Gramm (g)"
-    @State private var targetUnit: String = "Kilogramm (kg)"
+    @State private var selectedCategory: UnitCategory = .storage
+    @State private var sourceUnit: String = "Gibibyte (GiB)"
+    @State private var targetUnit: String = "Gigabyte (GB)"
+    @FocusState private var isInputFocused: Bool
     
     enum UnitCategory: String, CaseIterable, Identifiable {
         case length = "Länge"
@@ -58,6 +59,7 @@ struct UnitConverterView: View {
                 .background(Color(UIColor.tertiarySystemBackground))
                 .cornerRadius(8)
                 .onChange(of: selectedCategory) { _ in
+                    isInputFocused = false
                     resetUnitsForCategory()
                 }
             }
@@ -72,6 +74,7 @@ struct UnitConverterView: View {
                 
                 TextField("Wert", text: $inputValue)
                     .keyboardType(.decimalPad)
+                    .focused($isInputFocused)
                     .font(.system(size: 20, weight: .bold, design: .monospaced))
                     .padding(8)
                     .background(Color(UIColor.tertiarySystemBackground))
@@ -100,10 +103,16 @@ struct UnitConverterView: View {
                     .cornerRadius(8)
                 }
                 
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.orange)
-                    .padding(.top, 14)
+                Button(action: {
+                    let temp = sourceUnit
+                    sourceUnit = targetUnit
+                    targetUnit = temp
+                }) {
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.orange)
+                        .padding(.top, 14)
+                }
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Nach:")
@@ -137,7 +146,7 @@ struct UnitConverterView: View {
                     Text(convertedValue)
                         .font(.system(size: 22, weight: .bold, design: .monospaced))
                         .foregroundColor(.orange)
-                        .minimumScaleFactor(0.5)
+                        .minimumScaleFactor(0.45)
                         .lineLimit(1)
                     
                     Spacer()
@@ -156,12 +165,24 @@ struct UnitConverterView: View {
             Spacer(minLength: 0)
         }
         .padding(.top, 4)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Fertig") {
+                    isInputFocused = false
+                }
+                .fontWeight(.bold)
+            }
+        }
     }
     
     // MARK: - Helper Logik
     private func resetUnitsForCategory() {
         let units = availableUnits()
-        if let first = units.first, let second = units.dropFirst().first {
+        if selectedCategory == .storage {
+            sourceUnit = "Gibibyte (GiB)"
+            targetUnit = "Gigabyte (GB)"
+        } else if let first = units.first, let second = units.dropFirst().first {
             sourceUnit = first
             targetUnit = second
         }
@@ -176,9 +197,24 @@ struct UnitConverterView: View {
         case .temperature:
             return ["Grad Celsius (°C)", "Grad Fahrenheit (°F)", "Kelvin (K)"]
         case .dataRate:
-            return ["Bit/s (bps)", "Kbit/s (Kbps)", "Mbit/s (Mbps)", "Gbit/s (Gbps)"]
+            return ["Bit/s (bps)", "Kbit/s (Kbps)", "Mbit/s (Mbps)", "Gbit/s (Gbps)", "Tbit/s (Tbps)", "Megabyte/s (MB/s)", "Gigabyte/s (GB/s)"]
         case .storage:
-            return ["Byte (B)", "Kilobyte (KB)", "Megabyte (MB)", "Gigabyte (GB)", "Kibibyte (KiB)", "Mebibyte (MiB)", "Gibibyte (GiB)"]
+            return [
+                "Bit (bit)",
+                "Byte (B)",
+                "Kilobyte (KB)",
+                "Megabyte (MB)",
+                "Gigabyte (GB)",
+                "Terabyte (TB)",
+                "Petabyte (PB)",
+                "Exabyte (EB)",
+                "Kibibyte (KiB)",
+                "Mebibyte (MiB)",
+                "Gibibyte (GiB)",
+                "Tebibyte (TiB)",
+                "Pebibyte (PiB)",
+                "Exbibyte (EiB)"
+            ]
         case .currency:
             return ["EUR (€)", "USD ($)", "GBP (£)", "CHF (Fr.)", "PLN (zł)", "CZK (Kč)", "DKK (kr.)"]
         }
@@ -233,36 +269,41 @@ struct UnitConverterView: View {
     }
     
     private func convertDataRate(val: Double, from: String, to: String) -> String {
-        var bps: Double = val
-        if from.contains("Kbps") { bps = val * 1000.0 }
-        else if from.contains("Mbps") { bps = val * 1_000_000.0 }
-        else if from.contains("Gbps") { bps = val * 1_000_000_000.0 }
+        let toBps: [String: Double] = [
+            "Bit/s (bps)": 1.0,
+            "Kbit/s (Kbps)": 1e3,
+            "Mbit/s (Mbps)": 1e6,
+            "Gbit/s (Gbps)": 1e9,
+            "Tbit/s (Tbps)": 1e12,
+            "Megabyte/s (MB/s)": 8e6,
+            "Gigabyte/s (GB/s)": 8e9
+        ]
         
-        var result: Double = bps
-        if to.contains("Kbps") { result = bps / 1000.0 }
-        else if to.contains("Mbps") { result = bps / 1_000_000.0 }
-        else if to.contains("Gbps") { result = bps / 1_000_000_000.0 }
-        
+        guard let factorFrom = toBps[from], let factorTo = toBps[to] else { return formatOutput(val) }
+        let result = (val * factorFrom) / factorTo
         return formatOutput(result)
     }
     
     private func convertStorage(val: Double, from: String, to: String) -> String {
-        var bytes: Double = val
-        if from.contains("(KB)") { bytes = val * 1000.0 }
-        else if from.contains("(MB)") { bytes = val * 1_000_000.0 }
-        else if from.contains("(GB)") { bytes = val * 1_000_000_000.0 }
-        else if from.contains("(KiB)") { bytes = val * 1024.0 }
-        else if from.contains("(MiB)") { bytes = val * 1_048_576.0 }
-        else if from.contains("(GiB)") { bytes = val * 1_073_741_824.0 }
+        let toBytes: [String: Double] = [
+            "Bit (bit)": 0.125,
+            "Byte (B)": 1.0,
+            "Kilobyte (KB)": 1e3,
+            "Megabyte (MB)": 1e6,
+            "Gigabyte (GB)": 1e9,
+            "Terabyte (TB)": 1e12,
+            "Petabyte (PB)": 1e15,
+            "Exabyte (EB)": 1e18,
+            "Kibibyte (KiB)": pow(1024, 1),
+            "Mebibyte (MiB)": pow(1024, 2),
+            "Gibibyte (GiB)": pow(1024, 3),
+            "Tebibyte (TiB)": pow(1024, 4),
+            "Pebibyte (PiB)": pow(1024, 5),
+            "Exbibyte (EiB)": pow(1024, 6)
+        ]
         
-        var result: Double = bytes
-        if to.contains("(KB)") { result = bytes / 1000.0 }
-        else if to.contains("(MB)") { result = bytes / 1_000_000.0 }
-        else if to.contains("(GB)") { result = bytes / 1_000_000_000.0 }
-        else if to.contains("(KiB)") { result = bytes / 1024.0 }
-        else if to.contains("(MiB)") { result = bytes / 1_048_576.0 }
-        else if to.contains("(GiB)") { result = bytes / 1_073_741_824.0 }
-        
+        guard let factorFrom = toBytes[from], let factorTo = toBytes[to] else { return formatOutput(val) }
+        let result = (val * factorFrom) / factorTo
         return formatOutput(result)
     }
     
@@ -288,10 +329,18 @@ struct UnitConverterView: View {
     }
     
     private func formatOutput(_ val: Double) -> String {
-        if val.truncatingRemainder(dividingBy: 1) == 0 {
+        if val == 0 { return "0" }
+        let absVal = abs(val)
+        
+        if absVal >= 1e15 || (absVal > 0 && absVal < 0.0001) {
+            return String(format: "%.4e", val).replacingOccurrences(of: ".", with: ",")
+        } else if val.truncatingRemainder(dividingBy: 1) == 0 && absVal < 1e15 {
             return String(format: "%.0f", val)
         } else {
-            return String(format: "%.4f", val).replacingOccurrences(of: ".", with: ",")
+            let formatted = String(format: "%.6f", val)
+            let trimmed = formatted.replacingOccurrences(of: #"0+$"#, with: "", options: .regularExpression)
+                                   .replacingOccurrences(of: #"\.$"#, with: "", options: .regularExpression)
+            return trimmed.replacingOccurrences(of: ".", with: ",")
         }
     }
 }

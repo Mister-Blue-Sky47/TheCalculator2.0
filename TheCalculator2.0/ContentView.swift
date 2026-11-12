@@ -77,6 +77,7 @@ struct ContentView: View {
     @State private var showHistorySheet: Bool = false
     @State private var showSettingsSheet: Bool = false
     @State private var showConstantsSheet: Bool = false
+    @State private var showITOverlays: Bool = false
     
     // Dice State (0 = A-Z Buchstaben-Würfel, sonst 6, 10, 20, 100)
     @State private var selectedDiceSides: Int = 6
@@ -187,9 +188,12 @@ struct ContentView: View {
             settingsSheetView
         }
         .sheet(isPresented: $showConstantsSheet) {
-            constantsSheetView
-        }
-    }
+                        constantsSheetView
+                    }
+                    .sheet(isPresented: $showITOverlays) {
+                        ITOverlaysView()
+                    }
+                }
     
     private var headerControls: some View {
         HStack(spacing: 3) {
@@ -223,6 +227,14 @@ struct ContentView: View {
                     .foregroundColor(.gray)
                     .cornerRadius(6)
             }
+            Button(action: { showITOverlays = true }) {
+                            Image(systemName: "rectangle.stack.badge.plus")
+                                .font(.system(size: 12, weight: .bold))
+                                .padding(5)
+                                .background(Color(UIColor.tertiarySystemBackground))
+                                .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
+                                .cornerRadius(6)
+                        }
             
             Spacer(minLength: 1)
             

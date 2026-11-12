@@ -120,22 +120,27 @@ struct ElektroCalculator {
     }
     
     static func calculateOhmsLaw(u: Double?, i: Double?, r: Double?, p: Double?) -> OhmsLawResult? {
-        if let u = u, let i = i {
+        if let u = u, let i = i, i != 0 {
             return OhmsLawResult(u: u, i: i, r: u / i, p: u * i)
         } else if let u = u, let r = r, r != 0 {
             return OhmsLawResult(u: u, i: u / r, r: r, p: (u * u) / r)
         } else if let i = i, let r = r {
             return OhmsLawResult(u: i * r, i: i, r: r, p: i * i * r)
-        } else if let p = p, let u = u, u != 0 {
+        } else if let p = p, let u = u, u != 0, p != 0 {
             return OhmsLawResult(u: u, i: p / u, r: (u * u) / p, p: p)
         } else if let p = p, let i = i, i != 0 {
             return OhmsLawResult(u: p / i, i: i, r: p / (i * i), p: p)
+        } else if let p = p, let r = r, p >= 0, r > 0 {
+            let calcU = sqrt(p * r)
+            let calcI = sqrt(p / r)
+            return OhmsLawResult(u: calcU, i: calcI, r: r, p: p)
         }
         return nil
     }
     
     static func calculateVoltageDrop(voltage: Double, current: Double, lengthMeter: Double, crossSection: Double) -> (dropVolts: Double, dropPercent: Double) {
-        let kappa: Double = 56.0 // Kupfer
+        guard voltage > 0, crossSection > 0 else { return (0, 0) }
+        let kappa: Double = 56.0 // Leitfähigkeit Kupfer in m/(Ω·mm²)
         let dropV = (2.0 * lengthMeter * current) / (kappa * crossSection)
         let dropPct = (dropV / voltage) * 100.0
         return (dropV, dropPct)

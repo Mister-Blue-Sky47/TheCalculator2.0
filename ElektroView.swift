@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ElektroView: View {
     @State private var subTab = 0 // 0: Ohm, 1: Spannungsfall, 2: USV, 3: Widerstand / Farbcode
+    @FocusState private var isInputFocused: Bool
     
     // Ohm'sches Gesetz State
     @State private var inputU: String = ""
@@ -32,36 +33,49 @@ struct ElektroView: View {
     @State private var r2Text: String = "220"
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                
-                // Unter-Tab Auswahl (Erweitert um Widerstand/Farbcode)
-                Picker("Elektro Auswahl", selection: $subTab) {
-                    Text("Ohm / P").tag(0)
-                    Text("Spannungsfall").tag(1)
-                    Text("USV Puffer").tag(2)
-                    Text("Widerstand").tag(3)
+            ScrollView {
+                VStack(spacing: 12) {
+                    
+                    // Unter-Tab Auswahl (Erweitert um Widerstand/Farbcode)
+                    Picker("Elektro Auswahl", selection: $subTab) {
+                        Text("Ohm / P").tag(0)
+                        Text("Spannungsfall").tag(1)
+                        Text("USV Puffer").tag(2)
+                        Text("Widerstand").tag(3)
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 4)
+                    .onChange(of: subTab) { _ in
+                        isInputFocused = false
+                    }
+                    switch subTab {
+                    case 0:
+                        ohmView
+                    case 1:
+                        voltageDropView
+                    case 2:
+                        usvView
+                    case 3:
+                        resistorColorView
+                    default:
+                        EmptyView()
+                    }
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 8)
-                .padding(.top, 4)
-                
-                switch subTab {
-                case 0:
-                    ohmView
-                case 1:
-                    voltageDropView
-                case 2:
-                    usvView
-                case 3:
-                    resistorColorView
-                default:
-                    EmptyView()
+                .focused($isInputFocused)
+                .padding(.bottom, 12)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Fertig") {
+                        isInputFocused = false
+                    }
+                    .fontWeight(.bold)
                 }
             }
-            .padding(.bottom, 12)
         }
-    }
     
     // MARK: - 1. Ohm'sches Gesetz View
     private var ohmView: some View {
