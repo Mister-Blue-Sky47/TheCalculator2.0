@@ -1,5 +1,3 @@
-// xcode: set sdk=iOS
-
 import SwiftUI
 
 enum CalculatorMode: String, CaseIterable, Identifiable {
@@ -57,7 +55,7 @@ struct PhysicsConstant: Identifiable {
 
 struct ContentView: View {
     @State private var selectedMode: CalculatorMode = .basic
-    @State private var currentTheme: AppTheme = .matrixGreen
+    @State private var currentTheme: AppTheme = .proDark
     
     @State private var displayValue: String = "0"
     @State private var formulaDisplay: String = ""
@@ -71,13 +69,16 @@ struct ContentView: View {
     @State private var memoryValue: Double = 0.0
     @State private var hasMemory: Bool = false
     
+    // Reverse-Konverter (Zeichen -> Code) im BASE/HEX-Modus
+    @State private var reverseInputChar: String = "A"
+    
     // Sheets
     @State private var history: [HistoryItem] = []
     @State private var showHistorySheet: Bool = false
     @State private var showSettingsSheet: Bool = false
     @State private var showConstantsSheet: Bool = false
     
-    // Dice State
+    // Dice State (0 = A-Z Buchstaben-Würfel, sonst 6, 10, 20, 100)
     @State private var selectedDiceSides: Int = 6
     
     @State private var showNerdFact: Bool = false
@@ -102,67 +103,11 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 4) {
+            headerControls
+                .padding(.horizontal, 6)
+                .padding(.top, 2)
             
-            // 1. HEADER
-            HStack(spacing: 4) {
-                Picker("Modus", selection: $selectedMode) {
-                    ForEach(CalculatorMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color(UIColor.tertiarySystemBackground))
-                .cornerRadius(8)
-                .fixedSize()
-                
-                Button(action: { showHistorySheet = true }) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 14, weight: .bold))
-                        .padding(6)
-                        .background(Color(UIColor.tertiarySystemBackground))
-                        .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
-                        .cornerRadius(8)
-                }
-                
-                Button(action: { showSettingsSheet = true }) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 14, weight: .bold))
-                        .padding(6)
-                        .background(Color(UIColor.tertiarySystemBackground))
-                        .foregroundColor(.gray)
-                        .cornerRadius(8)
-                }
-                
-                Spacer(minLength: 4)
-                
-                if selectedMode == .basic || selectedMode == .scientific {
-                    Toggle(isOn: $useOrderOfOperations) {
-                        Text(useOrderOfOperations ? "Math" : "Tisch")
-                            .font(.caption2)
-                            .fontWeight(.bold)
-                    }
-                    .toggleStyle(.button)
-                    .tint(currentTheme.operatorButtonColor)
-                }
-                
-                if selectedMode == .scientific {
-                    Picker("Winkel", selection: $useRadDegrees) {
-                        Text("DEG").tag(false)
-                        Text("RAD").tag(true)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 85)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.top, 2)
-            
-            // 2. DAS ECHTE 4-ZEILIGE PRO-DISPLAY (Visuell klar strukturiert)
             VStack(alignment: .trailing, spacing: 3) {
-                // Zeile 1: Modus & System-Status
                 HStack {
                     Text("SYS: READY")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
@@ -178,13 +123,11 @@ struct ContentView: View {
                     }
                 }
                 
-                // Zeile 2: Formelanzeige
                 Text(formulaDisplay.isEmpty ? " " : formulaDisplay)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.gray)
                     .lineLimit(1)
                 
-                // Zeile 3: Register / Speicher / Status Info
                 HStack {
                     if hasMemory {
                         Text("MEM: \(formatResult(memoryValue))")
@@ -199,7 +142,6 @@ struct ContentView: View {
                     }
                 }
                 
-                // Zeile 4: Großer Haupt-Ausgabewert
                 Text(displayValue)
                     .font(.system(size: 32, weight: .bold, design: .monospaced))
                     .minimumScaleFactor(0.35)
@@ -213,7 +155,6 @@ struct ContentView: View {
             .cornerRadius(10)
             .padding(.horizontal, 8)
             
-            // 3. DYNAMISCHER INHALT
             Group {
                 switch selectedMode {
                 case .basic:
@@ -250,7 +191,63 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - Constants Sheet
+    private var headerControls: some View {
+        HStack(spacing: 3) {
+            Picker("Modus", selection: $selectedMode) {
+                ForEach(CalculatorMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .padding(.horizontal, 4)
+            .padding(.vertical, 3)
+            .background(Color(UIColor.tertiarySystemBackground))
+            .cornerRadius(6)
+            .fixedSize()
+            
+            Button(action: { showHistorySheet = true }) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 12, weight: .bold))
+                    .padding(5)
+                    .background(Color(UIColor.tertiarySystemBackground))
+                    .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
+                    .cornerRadius(6)
+            }
+            
+            Button(action: { showSettingsSheet = true }) {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .padding(5)
+                    .background(Color(UIColor.tertiarySystemBackground))
+                    .foregroundColor(.gray)
+                    .cornerRadius(6)
+            }
+            
+            Spacer(minLength: 1)
+            
+            if selectedMode == .basic || selectedMode == .scientific {
+                Toggle(isOn: $useOrderOfOperations) {
+                    Text(useOrderOfOperations ? "Math" : "Tisch")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .toggleStyle(.button)
+                .tint(currentTheme.operatorButtonColor)
+                .fixedSize()
+            }
+            
+            if selectedMode == .scientific {
+                Toggle(isOn: $useRadDegrees) {
+                    Text(useRadDegrees ? "RAD" : "DEG")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .toggleStyle(.button)
+                .tint(.blue)
+                .fixedSize()
+            }
+        }
+    }
+    
     private var constantsSheetView: some View {
         NavigationView {
             List(physicsConstants) { item in
@@ -286,7 +283,6 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - Settings / Theme Sheet
     private var settingsSheetView: some View {
         NavigationView {
             Form {
@@ -300,11 +296,12 @@ struct ContentView: View {
                 }
                 
                 Section(header: Text("Würfel-Einstellungen")) {
-                    Picker("Würfel-Seiten", selection: $selectedDiceSides) {
-                        Text("d6 (6-seitig)").tag(6)
-                        Text("d10 (10-seitig)").tag(10)
-                        Text("d20 (20-seitig)").tag(20)
-                        Text("d100 (100-seitig)").tag(100)
+                    Picker("Würfel-Typ", selection: $selectedDiceSides) {
+                        Text("d6").tag(6)
+                        Text("d10").tag(10)
+                        Text("d20").tag(20)
+                        Text("d100").tag(100)
+                        Text("d A-Z").tag(0) // 0 steht für Buchstaben-Würfel
                     }
                     .pickerStyle(.segmented)
                 }
@@ -334,7 +331,6 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - History Sheet
     private var historySheetView: some View {
         NavigationView {
             List {
@@ -387,7 +383,6 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - Basic Tastatur Grid (Inkl. KLAMMER ( & SWAP)
     private var basicCalculatorGrid: some View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
@@ -444,7 +439,6 @@ struct ContentView: View {
         .padding(.horizontal, 8)
     }
     
-    // MARK: - Scientific Tastatur Grid (INHALTE ERHALTEN!)
     private var scientificCalculatorGrid: some View {
         VStack(spacing: 4) {
             VStack(spacing: 3) {
@@ -471,7 +465,7 @@ struct ContentView: View {
                 }
                 HStack(spacing: 3) {
                     squareScientificButton("rnd") { generateRandomFloat() }
-                    squareScientificButton("🎲d\(selectedDiceSides)") { generateDiceRoll() }
+                    squareScientificButton(selectedDiceSides == 0 ? "🎲d A-Z" : "🎲d\(selectedDiceSides)") { generateDiceRoll() }
                     squareScientificButton("Rnd100") { generateRandomInt100() }
                     squareScientificButton("mod") { appendSymbol("mod") }
                     squareScientificButton("1/x") { applyReciprocal() }
@@ -498,11 +492,11 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
     
-    // MARK: - Base / Hex View
     private var hexBinView: some View {
         VStack(spacing: 4) {
             ScrollView {
                 VStack(spacing: 6) {
+                    // 1. Bitweise Logik-Operationen
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Bitweise Logik-Operationen").font(.caption).fontWeight(.bold).foregroundColor(.blue)
                         HStack(spacing: 4) {
@@ -519,30 +513,93 @@ struct ContentView: View {
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(8)
                     
+                    // 2. Basen, ASCII & Unicode (Zahl -> Zeichen & Basen)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Basen & ASCII").font(.caption).fontWeight(.bold).foregroundColor(.blue)
+                        Text("Basen, ASCII & Unicode").font(.caption).fontWeight(.bold).foregroundColor(.blue)
                         
-                        let cleanText = displayValue.replacingOccurrences(of: ",", with: ".")
-                        if let val = Double(cleanText), val <= Double(Int64.max) && val >= Double(Int64.min) {
-                            let intVal = Int64(val)
-                            let res = BaseCalculator.convert(value: intVal)
-                            Text("DEC: \(res.dec)").font(.system(size: 13, design: .monospaced))
-                            Text("HEX: \(res.hex)").font(.system(size: 13, design: .monospaced))
-                            Text("BIN: \(res.bin)").font(.system(size: 13, design: .monospaced))
-                            if intVal >= 32 && intVal <= 126, let unicode = UnicodeScalar(Int(intVal)) {
-                                Text("ASCII: '\(Character(unicode))'").font(.system(size: 13, design: .monospaced)).foregroundColor(.green).fontWeight(.bold)
-                            } else {
-                                Text("ASCII: (Nicht druckbar)").font(.caption2).foregroundColor(.secondary)
+                        let cleanText = displayValue.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
+                        let parsedInt: Int64? = {
+                            if let d = Double(cleanText), d <= Double(Int64.max), d >= Double(Int64.min), d.truncatingRemainder(dividingBy: 1) == 0 {
+                                return Int64(d)
+                            } else if let hexVal = Int64(cleanText.replacingOccurrences(of: "0x", with: "").replacingOccurrences(of: "0X", with: ""), radix: 16) {
+                                return hexVal
                             }
+                            return nil
+                        }()
+
+                        if cleanText == "Syntaxfehler" || cleanText == "Ungültiger Wert" || cleanText.contains("Division") {
+                            Text("Warte auf gültigen Ausdruck...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else if let intVal = parsedInt {
+                            let res = BaseCalculator.convert(value: intVal)
+                            Text("DEC: \(res.dec)").font(.system(size: 12, design: .monospaced))
+                            Text("HEX: \(res.hex)").font(.system(size: 12, design: .monospaced))
+                            Text("BIN: \(res.bin)").font(.system(size: 11, design: .monospaced))
+                            Text(res.charInfo)
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundColor(.green)
                         } else {
-                            Text("Bereichsüberschreitung (Overflow)").font(.caption).foregroundColor(.red).bold()
-                            Text("Wert zu groß für Int64-Konvertierung").font(.caption2).foregroundColor(.secondary)
+                            Text("Bereichsüberschreitung / Ungültige Ganzzahl").font(.caption).foregroundColor(.red).bold()
+                            Text("Bitte gültige Dezimal- oder Hex-Zahl eingeben").font(.caption2).foregroundColor(.secondary)
                         }
                     }
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(8)
+                    
+                    // 3. Reverse-Konverter (Zeichen -> Code)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Reverse: Zeichen → Code").font(.caption).fontWeight(.bold).foregroundColor(.blue)
+                                            HStack(spacing: 8) {
+                                                TextField("Zeichen", text: $reverseInputChar)
+                                                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                                                    .multilineTextAlignment(.center)
+                                                    .frame(width: 48, height: 34)
+                                                    .background(Color(UIColor.tertiarySystemBackground))
+                                                    .cornerRadius(6)
+                                                    .submitLabel(.done)
+                                                    .onSubmit { hideKeyboard() }
+                                                    .onChange(of: reverseInputChar) { _, newValue in
+                                                        if let firstChar = newValue.first {
+                                                            let single = String(firstChar)
+                                                            if reverseInputChar != single {
+                                                                reverseInputChar = single
+                                                            }
+                                                        }
+                                                    }
+                                                
+                                                let scalars = Array(reverseInputChar.unicodeScalars)
+                                                if let scalar = scalars.first {
+                                                    let code = Int64(scalar.value)
+                                                    let res = BaseCalculator.convert(value: code)
+                                                    VStack(alignment: .leading, spacing: 2) {
+                                                        Text("DEC: \(res.dec)  |  HEX: \(res.hex) (U+\(String(format: "%04X", scalar.value)))")
+                                                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                                        if scalars.count > 1 {
+                                                            let extra = scalars.dropFirst().map { String(format: "U+%04X", $0.value) }.joined(separator: " ")
+                                                            Text("BIN: \(res.bin) • Sequenz: \(extra)")
+                                                                .font(.system(size: 10, design: .monospaced))
+                                                                .foregroundColor(.orange)
+                                                        } else {
+                                                            Text("BIN: \(res.bin)")
+                                                                .font(.system(size: 10, design: .monospaced))
+                                                                .foregroundColor(.secondary)
+                                                        }
+                                                    }
+                                                } else {
+                                                    Text("Einzelnes Zeichen eingeben (z. B. A, €, 🚀)")
+                                                        .font(.caption2)
+                                                        .foregroundColor(.secondary)
+                                                }
+                                                Spacer(minLength: 0)
+                                            }
+                                        }
+                                        .padding(8)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(Color(UIColor.secondarySystemBackground))
+                                        .cornerRadius(8)
                 }
                 .padding(.horizontal, 8)
             }
@@ -562,7 +619,6 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - Button Generator
     private func calcButton(_ label: String, color: Color = .blue, textColor: Color = .white, action: @escaping () -> Void) -> some View {
         Button(action: {
             hideKeyboard()
@@ -578,7 +634,6 @@ struct ContentView: View {
         .buttonStyle(.plain)
     }
     
-    // MARK: - MATH & RANDOM HELPER
     private func generateRandomFloat() {
         let rndVal = Double.random(in: 0.0...1.0)
         let formatted = formatResult(rndVal)
@@ -588,10 +643,20 @@ struct ContentView: View {
     }
     
     private func generateDiceRoll() {
-        let roll = Int.random(in: 1...selectedDiceSides)
-        displayValue = String(roll)
-        formulaExpression = String(roll)
-        isTypingNewNumber = true
+        if selectedDiceSides == 0 {
+            // Buchstaben-Würfel A-Z
+            let letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            if let randomLetter = letters.randomElement() {
+                displayValue = String(randomLetter)
+                formulaExpression = String(randomLetter)
+                isTypingNewNumber = true
+            }
+        } else {
+            let roll = Int.random(in: 1...selectedDiceSides)
+            displayValue = String(roll)
+            formulaExpression = String(roll)
+            isTypingNewNumber = true
+        }
     }
     
     private func generateRandomInt100() {
@@ -615,7 +680,6 @@ struct ContentView: View {
         isTypingNewNumber = true
     }
     
-    // MARK: - SWAP OPERANDS LOGIK
     private func swapOperands() {
         let tokens = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
         if tokens.count == 3 {
@@ -629,7 +693,6 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - EINGABELOGIK
     private func appendDigit(_ digit: String) {
         if hasEvaluatedResult {
             displayValue = digit
@@ -684,13 +747,26 @@ struct ContentView: View {
         formulaDisplay = formulaExpression
     }
     
+    // INTELLIGENTES DEL: Löscht Zahlenzeichen einzeln & Operatoren mit Leerzeichen in 1 Schritt!
     private func deleteLastChar() {
         if !displayValue.isEmpty && displayValue != "0" {
             displayValue.removeLast()
             if displayValue.isEmpty { displayValue = "0" }
         }
+        
         if !formulaExpression.isEmpty {
-            formulaExpression.removeLast()
+            if formulaExpression.hasSuffix(" ") {
+                // Wenn Formel auf Leerzeichen endet (Operator z.B. " + "), lösche das gesamte Operator-Paket " Op "
+                let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
+                let components = trimmed.components(separatedBy: " ")
+                if components.count > 1 {
+                    formulaExpression = components.dropLast().joined(separator: " ") + " "
+                } else {
+                    formulaExpression = ""
+                }
+            } else {
+                formulaExpression.removeLast()
+            }
         }
         formulaDisplay = formulaExpression
     }
@@ -748,11 +824,10 @@ struct ContentView: View {
     }
     
     private func applyBitwiseNot() {
-        guard let val = Int64(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
+        guard let val = parseHexOrDec(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
         displayValue = String(~val)
     }
     
-    // MARK: - EVALUATOR
     private func calculateResult() {
         let cleanExpr = formulaExpression.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
         
@@ -805,30 +880,90 @@ struct ContentView: View {
     }
     
     private func containsHexOrBitwise(_ expr: String) -> Bool {
-        let bitwiseOps = ["&", "|", "^", "<<", ">>"]
+        let pureBitwiseOps = ["&", "|", "<<", ">>"]
         let hexChars = ["A", "B", "C", "D", "E", "F"]
-        return bitwiseOps.contains(where: { expr.contains($0) }) || hexChars.contains(where: { expr.contains($0) })
+        
+        if pureBitwiseOps.contains(where: { expr.contains($0) }) || hexChars.contains(where: { expr.contains($0) }) {
+            return true
+        }
+        
+        if expr.contains("^") {
+            let tokens = expr.components(separatedBy: " ").filter { !$0.isEmpty }
+            for token in tokens {
+                if hexChars.contains(where: { token.contains($0) }) {
+                    return true
+                }
+            }
+        }
+        
+        return false
     }
     
     private func evaluateBitwiseExpression(_ expr: String) -> Int64? {
-        let tokens = expr.components(separatedBy: " ").filter { !$0.isEmpty }
-        if tokens.count == 3 {
-            let op = tokens[1]
-            guard let val1 = Int64(tokens[0], radix: 16) ?? Int64(tokens[0]),
-                  let val2 = Int64(tokens[2], radix: 16) ?? Int64(tokens[2]) else { return nil }
+        let trimmed = expr.trimmingCharacters(in: .whitespaces)
+        
+        // Unäres NOT (~wert)
+        if trimmed.hasPrefix("~") {
+            let operandStr = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+            if let val = parseHexOrDec(operandStr) {
+                return ~val
+            }
+            return nil
+        }
+        
+        // Ausdrücke in Tokens zerlegen (z. B. ["54", "+", "36", "+", "E"])
+        let tokens = trimmed.components(separatedBy: " ").filter { !$0.isEmpty }
+        guard !tokens.isEmpty, let firstVal = parseHexOrDec(tokens[0]) else {
+            return nil
+        }
+        
+        // Einzelner Wert ohne Operator (z. B. "FF")
+        if tokens.count == 1 {
+            return firstVal
+        }
+        
+        // Ketten-Auswertung von links nach rechts (ungerade Token-Anzahl: Wert Op Wert Op Wert ...)
+        guard tokens.count >= 3 && tokens.count % 2 == 1 else {
+            return nil
+        }
+        
+        var accumulator = firstVal
+        var i = 1
+        while i < tokens.count - 1 {
+            let op = tokens[i]
+            guard let nextVal = parseHexOrDec(tokens[i + 1]) else {
+                return nil
+            }
             
             switch op {
-            case "&": return val1 & val2
-            case "|": return val1 | val2
-            case "^": return val1 ^ val2
-            case "<<": return val1 << min(val2, 63)
-            case ">>": return val1 >> min(val2, 63)
-            default: break
+            case "&": accumulator = accumulator & nextVal
+            case "|": accumulator = accumulator | nextVal
+            case "^": accumulator = accumulator ^ nextVal
+            case "<<": accumulator = accumulator << min(max(nextVal, 0), 63)
+            case ">>": accumulator = accumulator >> min(max(nextVal, 0), 63)
+            case "+": accumulator = accumulator &+ nextVal
+            case "-": accumulator = accumulator &- nextVal
+            case "*", "×": accumulator = accumulator &* nextVal
+            case "/", "÷":
+                guard nextVal != 0 else { return nil }
+                accumulator = accumulator / nextVal
+            default:
+                return nil
             }
-        } else if tokens.count == 1, let val = Int64(tokens[0], radix: 16) ?? Int64(tokens[0]) {
-            return val
+            i += 2
         }
-        return nil
+        
+        return accumulator
+    }
+    
+    private func parseHexOrDec(_ str: String) -> Int64? {
+        let clean = str.replacingOccurrences(of: "0x", with: "")
+                       .replacingOccurrences(of: "0X", with: "")
+                       .trimmingCharacters(in: .whitespaces)
+        if selectedMode == .hexBin || clean.rangeOfCharacter(from: CharacterSet(charactersIn: "ABCDEFabcdef")) != nil {
+            return Int64(clean, radix: 16)
+        }
+        return Int64(clean)
     }
 
     private func evaluateMathExpression(_ expr: String) -> Double? {
@@ -840,18 +975,22 @@ struct ContentView: View {
         
         guard !clean.isEmpty else { return nil }
         
+        if clean.contains("^") {
+            let parts = clean.components(separatedBy: "^")
+            if parts.count == 2 {
+                let cleanBase = parts[0].trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+                let cleanExp = parts[1].trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+                if let base = Double(cleanBase), let exp = Double(cleanExp) {
+                    return pow(base, exp)
+                }
+            }
+        }
+        
         if containsHexOrBitwise(clean) {
             if let bitRes = evaluateBitwiseExpression(clean) {
                 return Double(bitRes)
             }
             return nil
-        }
-        
-        let tokens = clean.components(separatedBy: " ").filter { !$0.isEmpty }
-        if tokens.count == 3 && tokens[1] == "^" {
-            if let a = Double(tokens[0]), let b = Double(tokens[2]) {
-                return pow(a, b)
-            }
         }
         
         if clean.contains("mod") || clean.contains("%") {

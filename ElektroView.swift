@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ElektroView: View {
-    @State private var subTab = 0 // 0: Ohm, 1: Spannungsfall, 2: USV
+    @State private var subTab = 0 // 0: Ohm, 1: Spannungsfall, 2: USV, 3: Widerstand / Farbcode
     
     // Ohm'sches Gesetz State
     @State private var inputU: String = ""
@@ -23,173 +23,301 @@ struct ElektroView: View {
     @State private var inputBatAh: String = "18"
     @State private var usvMinutes: Double? = nil
     
+    // Widerstand / Farbcode State
+    @State private var ring1: ResistorColor = .brown
+    @State private var ring2: ResistorColor = .black
+    @State private var multiplier: ResistorColor = .red
+    @State private var tolerance: ResistorColor = .gold
+    @State private var r1Text: String = "100"
+    @State private var r2Text: String = "220"
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
                 
-                // Unter-Tab Auswahl
+                // Unter-Tab Auswahl (Erweitert um Widerstand/Farbcode)
                 Picker("Elektro Auswahl", selection: $subTab) {
                     Text("Ohm / P").tag(0)
                     Text("Spannungsfall").tag(1)
                     Text("USV Puffer").tag(2)
+                    Text("Widerstand").tag(3)
                 }
                 .pickerStyle(.segmented)
-                .padding(.horizontal)
+                .padding(.horizontal, 8)
+                .padding(.top, 4)
                 
                 switch subTab {
                 case 0:
-                    ohmsLawCard
+                    ohmView
                 case 1:
-                    voltageDropCard
+                    voltageDropView
+                case 2:
+                    usvView
+                case 3:
+                    resistorColorView
                 default:
-                    usvCard
+                    EmptyView()
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.bottom, 12)
         }
-        .dismissKeyboardOnTap() // <-- EXACT HIER an das Ende von ScrollView anfügen!
     }
     
-    // MARK: - 1. Ohm'sches Gesetz UI
-    private var ohmsLawCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Ohm'sches Gesetz & Leistung")
-                .font(.headline)
-            Text("Trage genau 2 Werte ein, um die restlichen 2 zu berechnen.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+    // MARK: - 1. Ohm'sches Gesetz View
+    private var ohmView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Ohm'sches Gesetz & Leistung (2 Werte eingeben)").font(.caption).fontWeight(.bold).foregroundColor(.blue)
             
-            HStack {
-                inputField(title: "U (Volt)", text: $inputU)
-                inputField(title: "I (Ampere)", text: $inputI)
-            }
-            HStack {
-                inputField(title: "R (Ohm)", text: $inputR)
-                inputField(title: "P (Watt)", text: $inputP)
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                GridRow {
+                    Text("U (Volt):").font(.caption2)
+                    TextField("Spannung U", text: $inputU).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("I (Ampere):").font(.caption2)
+                    TextField("Strom I", text: $inputI).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("R (Ohm):").font(.caption2)
+                    TextField("Widerstand R", text: $inputR).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("P (Watt):").font(.caption2)
+                    TextField("Leistung P", text: $inputP).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
             }
             
-            HStack {
+            HStack(spacing: 8) {
                 Button("Berechnen") {
                     let u = Double(inputU.replacingOccurrences(of: ",", with: "."))
                     let i = Double(inputI.replacingOccurrences(of: ",", with: "."))
                     let r = Double(inputR.replacingOccurrences(of: ",", with: "."))
                     let p = Double(inputP.replacingOccurrences(of: ",", with: "."))
-                    
-                    if let res = ElektroCalculator.calculateOhmsLaw(u: u, i: i, r: r, p: p) {
-                        ohmResult = res
-                        inputU = String(format: "%.2f", res.u)
-                        inputI = String(format: "%.2f", res.i)
-                        inputR = String(format: "%.2f", res.r)
-                        inputP = String(format: "%.2f", res.p)
-                    }
+                    ohmResult = ElektroCalculator.calculateOhmsLaw(u: u, i: i, r: r, p: p)
                 }
                 .buttonStyle(.borderedProminent)
                 
-                Button("Zurücksetzen") {
-                    inputU = ""; inputI = ""; inputR = ""; inputP = ""
-                    ohmResult = nil
+                Button("Reset") {
+                    inputU = ""; inputI = ""; inputR = ""; inputP = ""; ohmResult = nil
                 }
                 .buttonStyle(.bordered)
             }
+            
+            if let res = ohmResult {
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Ergebnis:").font(.caption).bold()
+                    Text("Spannung U: \(String(format: "%.2f", res.u)) V").font(.system(size: 13, design: .monospaced))
+                    Text("Strom I: \(String(format: "%.2f", res.i)) A").font(.system(size: 13, design: .monospaced))
+                    Text("Widerstand R: \(String(format: "%.2f", res.r)) Ω").font(.system(size: 13, design: .monospaced))
+                    Text("Leistung P: \(String(format: "%.2f", res.p)) W").font(.system(size: 13, design: .monospaced))
+                }
+            }
         }
-        .padding()
-        .background(Color(UIColor.secondarySystemGroupedBackground))
-        .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.1), lineWidth: 1))
-        .padding(.horizontal)
+        .padding(10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(8)
+        .padding(.horizontal, 8)
     }
     
-    // MARK: - 2. Spannungsfall UI
-    private var voltageDropCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Spannungsfall (Kupferleitung)")
-                .font(.headline)
+    // MARK: - 2. Spannungsfall View
+    private var voltageDropView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Spannungsfall Leitungsberechnung (Kupfer γ=56)").font(.caption).fontWeight(.bold).foregroundColor(.blue)
             
-            HStack {
-                inputField(title: "Netzspannung (V)", text: $inputVoltage)
-                inputField(title: "Strom (A)", text: $inputCurrent)
-            }
-            HStack {
-                inputField(title: "Leitung (m)", text: $inputLength)
-                inputField(title: "Querschnitt (mm²)", text: $inputCrossSection)
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                GridRow {
+                    Text("U (Volt):").font(.caption2)
+                    TextField("Nennspannung", text: $inputVoltage).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("I (Ampere):").font(.caption2)
+                    TextField("Belastung", text: $inputCurrent).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("L (Meter):").font(.caption2)
+                    TextField("Leitungslänge", text: $inputLength).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("A (mm²):").font(.caption2)
+                    TextField("Querschnitt", text: $inputCrossSection).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
             }
             
             Button("Spannungsfall berechnen") {
-                let v = Double(inputVoltage) ?? 230
-                let i = Double(inputCurrent) ?? 0
-                let l = Double(inputLength) ?? 0
-                let q = Double(inputCrossSection) ?? 1.5
-                
-                let res = ElektroCalculator.calculateVoltageDrop(voltage: v, current: i, lengthMeters: l, crossSectionMm2: q)
-                dropResult = res
+                if let u = Double(inputVoltage.replacingOccurrences(of: ",", with: ".")),
+                   let i = Double(inputCurrent.replacingOccurrences(of: ",", with: ".")),
+                   let l = Double(inputLength.replacingOccurrences(of: ",", with: ".")),
+                   let a = Double(inputCrossSection.replacingOccurrences(of: ",", with: ".")) {
+                    dropResult = ElektroCalculator.calculateVoltageDrop(voltage: u, current: i, lengthMeter: l, crossSection: a)
+                }
             }
             .buttonStyle(.borderedProminent)
             
             if let res = dropResult {
-                            Divider()
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(String(format: "Spannungsabfall: %.2f V", res.dropVolts))
-                                    .fontWeight(.semibold)
-                                Text(String(format: "Relativ: %.2f %% (Norm Max: 3,0 %%)", res.dropPercent))
-                                    .foregroundColor(res.dropPercent > 3.0 ? .red : .green)
-                                    .font(.subheadline)
-                            }
-                        }
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Spannungsfall ΔU: \(String(format: "%.2f", res.dropVolts)) V").font(.system(size: 13, weight: .bold, design: .monospaced))
+                    Text("Prozentual: \(String(format: "%.2f", res.dropPercent)) %").font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(res.dropPercent > 3.0 ? .red : .green)
+                }
+            }
         }
-        .padding()
-        .background(Color(UIColor.secondarySystemGroupedBackground))
-        .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.1), lineWidth: 1))
-        .padding(.horizontal)
+        .padding(10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(8)
+        .padding(.horizontal, 8)
     }
     
-    // MARK: - 3. USV UI
-    private var usvCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("USV Batterielaufzeit")
-                .font(.headline)
+    // MARK: - 3. USV Puffer View
+    private var usvView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("USV Akku Pufferzeit-Berechnung (Wirkungsgrad ~85%)").font(.caption).fontWeight(.bold).foregroundColor(.blue)
             
-            HStack {
-                inputField(title: "Last (Watt)", text: $inputLoadW)
-                inputField(title: "Akku (Volt)", text: $inputBatV)
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                GridRow {
+                    Text("Last (Watt):").font(.caption2)
+                    TextField("Last W", text: $inputLoadW).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("Akku (Volt):").font(.caption2)
+                    TextField("Akkuspannung", text: $inputBatV).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("Kapazität (Ah):").font(.caption2)
+                    TextField("Kapazität Ah", text: $inputBatAh).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
             }
-            inputField(title: "Kapazität (Ah)", text: $inputBatAh)
             
-            Button("Laufzeit ermitteln") {
-                let w = Double(inputLoadW) ?? 0
-                let v = Double(inputBatV) ?? 12
-                let ah = Double(inputBatAh) ?? 0
-                
-                usvMinutes = ElektroCalculator.calculateUSVRuntime(loadWatts: w, batteryVolts: v, batteryAh: ah)
+            Button("Pufferzeit Berechnen") {
+                if let w = Double(inputLoadW.replacingOccurrences(of: ",", with: ".")),
+                   let v = Double(inputBatV.replacingOccurrences(of: ",", with: ".")),
+                   let ah = Double(inputBatAh.replacingOccurrences(of: ",", with: ".")) {
+                    usvMinutes = ElektroCalculator.calculateUSVRuntime(loadWatt: w, batteryVolts: v, batteryAh: ah)
+                }
             }
             .buttonStyle(.borderedProminent)
             
             if let mins = usvMinutes {
                 Divider()
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(String(format: "Geschätzte Autonomiezeit: %.0f Min. (%.1f Std.)", mins, mins / 60.0))
-                        .fontWeight(.semibold)
-                        .foregroundColor(.blue)
+                    Text("Erwartete Pufferzeit:").font(.caption).bold()
+                    Text("\(String(format: "%.1f", mins)) Minuten (\(String(format: "%.2f", mins / 60.0)) Std.)")
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundColor(.green)
                 }
             }
         }
-        .padding()
-        .background(Color(UIColor.secondarySystemGroupedBackground))
-        .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.1), lineWidth: 1))
-        .padding(.horizontal)
+        .padding(10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(8)
+        .padding(.horizontal, 8)
     }
     
-    private func inputField(title: String, text: Binding<String>) -> some View {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.caption).foregroundColor(.secondary)
-                TextField("", text: text)
-                    .keyboardType(.decimalPad)
-                    .textFieldStyle(.roundedBorder)
-                    .submitLabel(.done)
-                    .onSubmit {
-                        hideKeyboard()
+    // MARK: - 4. Widerstand & Farbcode View
+    private var resistorColorView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("4-Ring Farbcode Dekoder").font(.caption).fontWeight(.bold).foregroundColor(.blue)
+            
+            // Optischer Widerstands-Balken
+            HStack(spacing: 0) {
+                Rectangle().fill(Color.gray.opacity(0.4)).frame(width: 20, height: 4)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(UIColor.tertiarySystemBackground))
+                        .frame(height: 36)
+                    HStack(spacing: 12) {
+                        RoundedRectangle(cornerRadius: 2).fill(ring1.displayColor).frame(width: 8, height: 28)
+                        RoundedRectangle(cornerRadius: 2).fill(ring2.displayColor).frame(width: 8, height: 28)
+                        RoundedRectangle(cornerRadius: 2).fill(multiplier.displayColor).frame(width: 8, height: 28)
+                        Spacer().frame(width: 16)
+                        RoundedRectangle(cornerRadius: 2).fill(tolerance.displayColor).frame(width: 8, height: 28)
                     }
+                }
+                Rectangle().fill(Color.gray.opacity(0.4)).frame(width: 20, height: 4)
+            }
+            .padding(.horizontal, 8)
+            
+            // Dropdowns für Farbringe
+            VStack(spacing: 4) {
+                HStack {
+                    Text("1. Ring:").font(.caption2).frame(width: 60, alignment: .leading)
+                    Picker("", selection: $ring1) {
+                        ForEach([ResistorColor.brown, .red, .orange, .yellow, .green, .blue, .violet, .gray, .white], id: \.self) { c in
+                            Text(c.rawValue).tag(c)
+                        }
+                    }.pickerStyle(.menu).labelsHidden()
+                }
+                HStack {
+                    Text("2. Ring:").font(.caption2).frame(width: 60, alignment: .leading)
+                    Picker("", selection: $ring2) {
+                        ForEach([ResistorColor.black, .brown, .red, .orange, .yellow, .green, .blue, .violet, .gray, .white], id: \.self) { c in
+                            Text(c.rawValue).tag(c)
+                        }
+                    }.pickerStyle(.menu).labelsHidden()
+                }
+                HStack {
+                    Text("Multipl.:").font(.caption2).frame(width: 60, alignment: .leading)
+                    Picker("", selection: $multiplier) {
+                        ForEach(ResistorColor.allCases, id: \.self) { c in
+                            Text(c.rawValue).tag(c)
+                        }
+                    }.pickerStyle(.menu).labelsHidden()
+                }
+                HStack {
+                    Text("Toleranz:").font(.caption2).frame(width: 60, alignment: .leading)
+                    Picker("", selection: $tolerance) {
+                        ForEach([ResistorColor.brown, .red, .green, .blue, .violet, .gray, .gold, .silver], id: \.self) { c in
+                            Text("\(c.rawValue) (\(c.toleranceString))").tag(c)
+                        }
+                    }.pickerStyle(.menu).labelsHidden()
+                }
+            }
+            
+            let res4Band = ResistorCalculator.calculate4Band(ring1: ring1, ring2: ring2, multiplier: multiplier, tolerance: tolerance)
+            HStack {
+                Text("Widerstand:").font(.subheadline).bold()
+                Spacer()
+                Text("\(res4Band.formatted) \(res4Band.tol)")
+                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .foregroundColor(.green)
+            }
+            .padding(.top, 4)
+            
+            Divider()
+            
+            // Reihen- & Parallelschaltung Schnell-Berechnung
+            Text("Reihen- & Parallelschaltung").font(.caption).fontWeight(.bold).foregroundColor(.blue)
+            HStack(spacing: 8) {
+                VStack(alignment: .leading) {
+                    Text("R1 (Ω)").font(.caption2)
+                    TextField("R1", text: $r1Text).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
+                VStack(alignment: .leading) {
+                    Text("R2 (Ω)").font(.caption2)
+                    TextField("R2", text: $r2Text).textFieldStyle(.roundedBorder).keyboardType(.decimalPad)
+                }
+            }
+            
+            if let v1 = Double(r1Text.replacingOccurrences(of: ",", with: ".")),
+               let v2 = Double(r2Text.replacingOccurrences(of: ",", with: ".")) {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Reihe (R1+R2):").font(.caption2).foregroundColor(.gray)
+                        Text(ResistorCalculator.formatOhm(ResistorCalculator.series(r1: v1, r2: v2)))
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing) {
+                        Text("Parallel (R1||R2):").font(.caption2).foregroundColor(.gray)
+                        Text(ResistorCalculator.formatOhm(ResistorCalculator.parallel(r1: v1, r2: v2)))
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    }
+                }
             }
         }
+        .padding(10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(8)
+        .padding(.horizontal, 8)
     }
+}
