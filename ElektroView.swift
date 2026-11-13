@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ElektroView: View {
-    @State private var subTab = 0 // 0: Ohm, 1: Spannungsfall, 2: USV, 3: Widerstand / Farbcode
+    @State private var subTab = 0 // 0: Ohm, 1: Spannungsfall, 2: USV, 3: Widerstand, 4: E-Mobilität
     @FocusState private var isInputFocused: Bool
     
     // Ohm'sches Gesetz State
@@ -32,50 +32,61 @@ struct ElektroView: View {
     @State private var r1Text: String = "100"
     @State private var r2Text: String = "220"
 
+    // E-Mobilität State
+    @State private var batteryCapacityInput: String = "75" // in kWh
+    @State private var startSoCInput: String = "20"         // in %
+    @State private var targetSoCInput: String = "80"        // in %
+    @State private var selectedPowerKW: Double = 11.0       // Standard Wallbox 11 kW
+    @State private var includeLosses: Bool = true           // ~10% Ladeverluste
+
     var body: some View {
-            ScrollView {
-                VStack(spacing: 12) {
-                    
-                    // Unter-Tab Auswahl (Erweitert um Widerstand/Farbcode)
-                    Picker("Elektro Auswahl", selection: $subTab) {
-                        Text("Ohm / P").tag(0)
-                        Text("Spannungsfall").tag(1)
-                        Text("USV Puffer").tag(2)
-                        Text("Widerstand").tag(3)
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 4)
-                    .onChange(of: subTab) { _ in
-                        isInputFocused = false
-                    }
-                    switch subTab {
-                    case 0:
-                        ohmView
-                    case 1:
-                        voltageDropView
-                    case 2:
-                        usvView
-                    case 3:
-                        resistorColorView
-                    default:
-                        EmptyView()
-                    }
+        ScrollView {
+            VStack(spacing: 12) {
+                
+                // Unter-Tab Auswahl (Erweitert um E-Mobilität)
+                Picker("Elektro Auswahl", selection: $subTab) {
+                    Text("Ohm / P").tag(0)
+                    Text("Spannungsfall").tag(1)
+                    Text("USV").tag(2)
+                    Text("Widerstand").tag(3)
+                    Text("E-Mobilität").tag(4)
                 }
-                .focused($isInputFocused)
-                .padding(.bottom, 12)
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 8)
+                .padding(.top, 4)
+                .onChange(of: subTab) { _ in
+                    isInputFocused = false
+                }
+                
+                switch subTab {
+                case 0:
+                    ohmView
+                case 1:
+                    voltageDropView
+                case 2:
+                    usvView
+                case 3:
+                    resistorColorView
+                case 4:
+                    eMobilityView
+                default:
+                    EmptyView()
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Fertig") {
-                        isInputFocused = false
-                    }
-                    .fontWeight(.bold)
+            .focused($isInputFocused)
+            .padding(.bottom, 12)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Fertig") {
+                    isInputFocused = false
                 }
+                .fontWeight(.bold)
             }
         }
+    }
     
     // MARK: - 1. Ohm'sches Gesetz View
     private var ohmView: some View {
@@ -232,7 +243,6 @@ struct ElektroView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("4-Ring Farbcode Dekoder").font(.caption).fontWeight(.bold).foregroundColor(.blue)
             
-            // Optischer Widerstands-Balken
             HStack(spacing: 0) {
                 Rectangle().fill(Color.gray.opacity(0.4)).frame(width: 20, height: 4)
                 ZStack {
@@ -251,7 +261,6 @@ struct ElektroView: View {
             }
             .padding(.horizontal, 8)
             
-            // Dropdowns für Farbringe
             VStack(spacing: 4) {
                 HStack {
                     Text("1. Ring:").font(.caption2).frame(width: 60, alignment: .leading)
@@ -299,7 +308,6 @@ struct ElektroView: View {
             
             Divider()
             
-            // Reihen- & Parallelschaltung Schnell-Berechnung
             Text("Reihen- & Parallelschaltung").font(.caption).fontWeight(.bold).foregroundColor(.blue)
             HStack(spacing: 8) {
                 VStack(alignment: .leading) {
@@ -333,5 +341,107 @@ struct ElektroView: View {
         .background(Color(UIColor.secondarySystemBackground))
         .cornerRadius(8)
         .padding(.horizontal, 8)
+    }
+
+    // MARK: - 5. E-Mobilität & Ladezeit View
+    private var eMobilityView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("E-Mobilität & Ladeinfrastruktur (inkl. ~10% Verluste)")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.blue)
+            
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                GridRow {
+                    Text("Akkukap. (kWh):").font(.caption2)
+                    TextField("kWh", text: $batteryCapacityInput)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("Start-SoC (%):").font(.caption2)
+                    TextField("Start %", text: $startSoCInput)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                }
+                GridRow {
+                    Text("Ziel-SoC (%):").font(.caption2)
+                    TextField("Ziel %", text: $targetSoCInput)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                }
+            }
+            
+            // Schieberegler für Ladeleistung (2.2 kW bis 350 kW für moderne 400V/800V Netze & HPC)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Ladeleistung:").font(.caption2)
+                    Spacer()
+                    Text(String(format: "%.1f kW", selectedPowerKW))
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundColor(.blue)
+                }
+                
+                Slider(value: $selectedPowerKW, in: 2.2...350.0, step: 2.5)
+                    .accentColor(.blue)
+                
+                // Schnellauswahl-Buttons für gängige Standards
+                HStack(spacing: 6) {
+                    Button("11kW") { selectedPowerKW = 11.0 }
+                    Button("22kW") { selectedPowerKW = 22.0 }
+                    Button("150kW") { selectedPowerKW = 150.0 }
+                    Button("300kW") { selectedPowerKW = 300.0 }
+                }
+                .buttonStyle(.bordered)
+                .font(.system(size: 10))
+            }
+            
+            Toggle("Ladeverluste einrechnen (~10%)", isOn: $includeLosses)
+                .font(.caption2)
+            
+            Divider()
+            
+            HStack {
+                Text("Berechnete Ladezeit:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(calculateChargingTime())
+                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .foregroundColor(.green)
+            }
+        }
+        .padding(10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(8)
+        .padding(.horizontal, 8)
+    }
+    
+    private func calculateChargingTime() -> String {
+        let capacity = Double(batteryCapacityInput.replacingOccurrences(of: ",", with: ".")) ?? 0
+        let startSoC = Double(startSoCInput.replacingOccurrences(of: ",", with: ".")) ?? 0
+        let targetSoC = Double(targetSoCInput.replacingOccurrences(of: ",", with: ".")) ?? 0
+        
+        guard capacity > 0, targetSoC > startSoC, selectedPowerKW > 0 else {
+            return "Ungültig"
+        }
+        
+        let socDifference = targetSoC - startSoC
+        let energyNeededKW = capacity * (socDifference / 100.0)
+        let effectiveEnergy = includeLosses ? energyNeededKW * 1.10 : energyNeededKW
+        let hours = effectiveEnergy / selectedPowerKW
+        let totalSeconds = hours * 3600
+        
+        if totalSeconds < 60 {
+            return String(format: "%.0f s", totalSeconds)
+        } else if totalSeconds < 3600 {
+            let m = Int(totalSeconds) / 60
+            let s = Int(totalSeconds) % 60
+            return "\(m) min \(s) s"
+        } else {
+            let h = Int(totalSeconds) / 3600
+            let m = (Int(totalSeconds) % 3600) / 60
+            return "\(h) h \(m) min"
+        }
     }
 }

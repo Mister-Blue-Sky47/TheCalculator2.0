@@ -184,3 +184,33 @@
 - **Problemstellung:** Auf dem physischen Display des iPhone 17e wurde der `DEG/RAD`-Winkelschalter am rechten Bildschirmrand zu etwa 25 % abgeschnitten, während der `Tisch/Math`-Umschalter gestaucht dargestellt wurde.
 - **Lösung:** Entzerrung der Header-Zeile mittels flexibler `.fixedSize()`-Modifikatoren, Reduzierung der festen Frame-Breite des `DEG/RAD`-Pickers auf 76 Pixel sowie Einbettung in ein vorlagengetreues `headerControls`-Grid.
 - **Status:** Erfolgreich auf das physische Zielgerät (*iPhone 17e*) übertragen und getestet (`Build Succeeded`).
+# DOKUMENTATION_v2.md - TheCalculator 2.0
+
+## 1. Projektübersicht & Architektur
+- **Projektname:** TheCalculator 2.0
+- **Plattform:** iOS (SwiftUI), optimiert für iPhone-Formfaktoren (inkl. kompaktem iPhone 17e Layout).
+- **Architektur:** Modulare Swift-Dateistruktur (15 Swift-Dateien), aufgeteilt in Core-View (`ContentView.swift`), spezialisierte Rechner-Module (Scientific, Electrical, Unit, IPv6, Network Diagnostics) sowie UI-Extensions und Overlays.
+
+## 2. Kürzlich implementierte Meilensteine & Fixes (Stand: November 2026)
+
+### A. UI/UX Header-Refactoring (iPhone 17e Optimierung)
+- **Problem:** Horizontale Überläufe und abgeschnittene Ränder in der Ein-Zeilen-Kopfzeile auf kleineren Displays (z. B. Modus-Picker links und DEG/RAD-Toggle rechts).
+- **Lösung:** Umstellung auf ein robustes, **zweizeiliges Header-Layout**:
+  - *Zeile 1:* Modus-Auswahl-Picker (mit erzwungener horizontaler Ausrichtung via `.fixedSize`) und Schnellzugriffs-Buttons für Verlauf (`History`), Einstellungen (`Settings`) und IT-Overlays (`ITOverlays`).
+  - *Zeile 2:* Kontextabhängige Schalter für den Berechnungsmodus (`Math` [Punkt-vor-Strich] vs. `Tischrechner` [Sequentiell]) sowie den Trigonometrie-Modus (`RAD` / `DEG`).
+
+### B. Erweitertes Einheiten- und Speicher-Modul
+- Integration vollständiger IEC-Speichergrößen (`KiB`, `MiB`, `GiB`, `TiB`, `PiB` auf 1024er-Basis) parallel zu den dezimalen Einheiten.
+- Erweiterung des Einheiten-Konverters um grenznahe Währungen (`PLN`, `CZK`, `DKK`).
+
+### C. Math-Core & Evaluator-Stabilität
+- Trennung von Exponentiation ($x^y$) und Bitwise-XOR (`^`).
+- Saubere Unterscheidung zwischen mathematischem Modulo/Prozent und kaufmännischer Tischrechner-Prozentrechnung (`% (Tisch)`).
+- Umfassender Crash-Schutz bei mathematischen Grenzwerten (Division durch 0, negative Argumente in Logarithmen/Wurzeln).
+
+### D. Offline-Netzwerk-Diagnostik & OUI-Datenbank
+- Vorbereitung einer performanten, integrierten Offline-OUI-Herstellererkennung für MAC-Adressen im `NetworkDiagnosticCalculator.swift`, um auch ohne Internetverbindung im Außendienst Netzwerkhardware sofort identifizieren zu können.
+
+## 3. Ausblick & Nächste Schritte
+- Vollständige Implementierung des OUI-Hersteller-Wörterbuchs für die MAC-Analyse.
+- Verfeinerung des Dark-Mode-Verhaltens und systemunabhängiger Theme-Optionen.

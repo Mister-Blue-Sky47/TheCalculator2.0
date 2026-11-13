@@ -32,8 +32,8 @@ struct NetworkDiagnosticView: View {
                     
                     TextField("z. B. 70:81:05:12:34:56", text: $macInput)
                         .textFieldStyle(.roundedBorder)
-                        .autocapitalization(.allCharacters)
-                        .disableAutocorrection(true)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled(true)
                         .monospaced()
                     
                     Button(action: performMACLookup) {

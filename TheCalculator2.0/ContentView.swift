@@ -85,11 +85,28 @@ struct ContentView: View {
     @State private var showNerdFact: Bool = false
     @State private var currentFact: String = ""
     
-    let nerdFacts = [
-        "42 ist die Antwort auf die Frage nach dem Leben, dem Universum und dem ganzen Rest.",
-        "In ASCII entspricht 42 dem Sternchen (*).",
-        "42 ist die Summe der ersten 6 geraden Zahlen: 2 + 4 + 6 + 8 + 10 + 12."
-    ]
+    private let nerdFacts: [String] = [
+            "42 – Die Antwort auf das Leben, das Universum und den ganzen Rest. (Und vergiss dein Handtuch nicht!)",
+            "0x2A in Hex, 0b101010 in Binär – und 100 % die richtige Antwort in der IHK-Prüfung.",
+            "Es gibt 10 Arten von Menschen: Die, die Binär verstehen, und die, die es nicht tun.",
+            "Layer-8-Problem erkannt: Der Fehler sitzt meist ca. 40 cm vor dem Monitor.",
+            "Kein Backup, kein Mitleid! (3-2-1-Regel: 3 Kopien, 2 Medien, 1 Offsite.)",
+            "DNS ist immer schuld. Selbst wenn es nicht DNS ist – es war trotzdem DNS.",
+            "Ein UDP-Witz: Ich würde dir ja einen erzählen, aber ich weiß nicht, ob er ankommt.",
+            "Ein TCP-Witz: Hallo, möchtest du einen TCP-Witz hören? – Ja, ich möchte einen TCP-Witz hören. – Okay, hier ist der TCP-Witz.",
+            "127.0.0.1 – Nirgendwo ist es schöner als zu Hause (::1 für IPv6-Profis).",
+            "Merksatz Elektrotechnik: Blau ist Schwarz und Plus ist Minus – zumindest bis es knallt.",
+            "Wer misst, misst Mist – vor allem ohne Bezugspotenzial auf der falschen Messspitze.",
+            "404: Kaffeepause nicht gefunden. Bitte Administrator neu starten.",
+            "Freitag nach eins macht jeder seins – aber bitte vorher kein Produktiv-Update deployen!",
+            "IPv6 hat 3,4 × 10³⁸ Adressen. Das reicht für ca. 42 IP-Adressen pro Sandkorn auf der Erde.",
+            "Widerstand ist zwecklos – zumindest wenn R gegen 0 Ω geht (Kurzschluss!).",
+            "Ein Byte sind 8 Bit. Ein Nibble sind 4 Bit. Und ein Häppchen Pause hat sich jeder verdient.",
+            "RJ45-Crimp-Regel Nr. 1: Erst die Knickschutztülle aufs Kabel schieben, DANN den Stecker crimpen!",
+            "USV-Weisheit: Ein Stromausfall kommt immer exakt 3 Sekunden bevor man auf Speichern drückt.",
+            "ASCII 42 ist das Sternchen '*' – in Regex der Platzhalter für alles, in C der Zeiger auf die Wahrheit.",
+            "Spannungsfall über 3 %? Entweder Kupferquerschnitt erhöhen oder das Rack näher ans Kraftwerk schieben!"
+        ]
     
     let physicsConstants: [PhysicsConstant] = [
         PhysicsConstant(name: "Lichtgeschwindigkeit", symbol: "c", value: 299792458, unit: "m/s"),
@@ -196,70 +213,76 @@ struct ContentView: View {
                 }
     
     private var headerControls: some View {
-        HStack(spacing: 3) {
-            Picker("Modus", selection: $selectedMode) {
-                ForEach(CalculatorMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .padding(.horizontal, 4)
-            .padding(.vertical, 3)
-            .background(Color(UIColor.tertiarySystemBackground))
-            .cornerRadius(6)
-            .fixedSize()
-            
-            Button(action: { showHistorySheet = true }) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 12, weight: .bold))
-                    .padding(5)
-                    .background(Color(UIColor.tertiarySystemBackground))
-                    .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
-                    .cornerRadius(6)
-            }
-            
-            Button(action: { showSettingsSheet = true }) {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 12, weight: .bold))
-                    .padding(5)
-                    .background(Color(UIColor.tertiarySystemBackground))
-                    .foregroundColor(.gray)
-                    .cornerRadius(6)
-            }
-            Button(action: { showITOverlays = true }) {
-                            Image(systemName: "rectangle.stack.badge.plus")
-                                .font(.system(size: 12, weight: .bold))
-                                .padding(5)
-                                .background(Color(UIColor.tertiarySystemBackground))
-                                .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
-                                .cornerRadius(6)
+            VStack(spacing: 6) {
+                // Zeile 1: Modus-Auswahl & Schnell-Buttons
+                HStack(spacing: 6) {
+                    Picker("Modus", selection: $selectedMode) {
+                        ForEach(CalculatorMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
                         }
-            
-            Spacer(minLength: 1)
-            
-            if selectedMode == .basic || selectedMode == .scientific {
-                Toggle(isOn: $useOrderOfOperations) {
-                    Text(useOrderOfOperations ? "Math" : "Tisch")
-                        .font(.system(size: 9, weight: .bold))
+                    }
+                    .pickerStyle(.menu)
+                    .tint(.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(UIColor.tertiarySystemBackground))
+                    .cornerRadius(8)
+                    .fixedSize(horizontal: true, vertical: false) // Verhindert das unglückliche Umbrechen
+                    
+                    Spacer(minLength: 4)
+                    
+                    Button(action: { showHistorySheet = true }) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 13, weight: .bold))
+                            .padding(8)
+                            .background(Color(UIColor.tertiarySystemBackground))
+                            .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
+                            .cornerRadius(8)
+                    }
+                    
+                    Button(action: { showSettingsSheet = true }) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 13, weight: .bold))
+                            .padding(8)
+                            .background(Color(UIColor.tertiarySystemBackground))
+                            .foregroundColor(.gray)
+                            .cornerRadius(8)
+                    }
+                    
+                    Button(action: { showITOverlays = true }) {
+                        Image(systemName: "rectangle.stack.badge.plus")
+                            .font(.system(size: 13, weight: .bold))
+                            .padding(8)
+                            .background(Color(UIColor.tertiarySystemBackground))
+                            .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
+                            .cornerRadius(8)
+                    }
                 }
-                .toggleStyle(.button)
-                .tint(currentTheme.operatorButtonColor)
-                .fixedSize()
-            }
-            
-            if selectedMode == .scientific {
-                Toggle(isOn: $useRadDegrees) {
-                    Text(useRadDegrees ? "RAD" : "DEG")
-                        .font(.system(size: 9, weight: .bold))
+                
+                // Zeile 2: Kontext-Schalter (Math/Tisch & DEG/RAD)
+                if selectedMode == .basic || selectedMode == .scientific {
+                    HStack(spacing: 8) {
+                        Toggle(isOn: $useOrderOfOperations) {
+                            Text(useOrderOfOperations ? "Math (Punkt vor Strich)" : "Tischrechner (Sequentiell)")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .toggleStyle(.button)
+                        .tint(currentTheme.operatorButtonColor)
+                        
+                        if selectedMode == .scientific {
+                            Toggle(isOn: $useRadDegrees) {
+                                Text(useRadDegrees ? "RAD" : "DEG")
+                                    .font(.system(size: 11, weight: .bold))
+                            }
+                            .toggleStyle(.button)
+                            .tint(.blue)
+                            .frame(width: 70)
+                        }
+                    }
                 }
-                .toggleStyle(.button)
-                .tint(.blue)
-                .fixedSize()
             }
         }
-    }
-    
+
     private var constantsSheetView: some View {
         NavigationView {
             List(physicsConstants) { item in
@@ -792,9 +815,10 @@ struct ContentView: View {
     }
     
     private func trigger42Fact() {
-        currentFact = nerdFacts.randomElement() ?? nerdFacts[0]
-        showNerdFact = true
-    }
+            let candidates = nerdFacts.filter { $0 != currentFact }
+            currentFact = candidates.randomElement() ?? nerdFacts[0]
+            showNerdFact = true
+        }
     
     private func applySmartPercentage() {
         guard let current = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
@@ -1016,21 +1040,51 @@ struct ContentView: View {
             }
         }
 
-        let formatted = clean
-            .replacingOccurrences(of: "×", with: "*")
-            .replacingOccurrences(of: "÷", with: "/")
-            
-        let doubleExpr = formatted.components(separatedBy: " ")
-        if doubleExpr.contains("") || formatted.contains("**") || formatted.contains("//") || formatted.contains("++") {
-            return nil
-        }
-
-        let parsedExpr = NSExpression(format: formatted)
-        if let result = parsedExpr.expressionValue(with: nil, context: nil) as? NSNumber {
-            return result.doubleValue
-        }
-        
-        return nil
+        var formatted = clean
+                    .replacingOccurrences(of: "×", with: "*")
+                    .replacingOccurrences(of: "÷", with: "/")
+                
+                // 1. Implizite Multiplikation vor "(" und nach ")" ergänzen: z. B. "5 ( 2 + 2 )" -> "5 * ( 2 + 2 )"
+                formatted = formatted.replacingOccurrences(
+                    of: #"(\d|\))\s*\("#,
+                    with: "$1 * (",
+                    options: .regularExpression
+                )
+                formatted = formatted.replacingOccurrences(
+                    of: #"\)\s*(\d)"#,
+                    with: ") * $1",
+                    options: .regularExpression
+                )
+                
+                // 2. Prüfen, ob Klammern balanciert sind (sonst wirft NSExpression eine NSException!)
+                var parenBalance = 0
+                for char in formatted {
+                    if char == "(" { parenBalance += 1 }
+                    else if char == ")" { parenBalance -= 1 }
+                    if parenBalance < 0 { return nil }
+                }
+                if parenBalance != 0 { return nil }
+                
+                // 3. Leere Klammern "()" oder doppelte Operatoren abfangen
+                let compact = formatted.replacingOccurrences(of: " ", with: "")
+                if compact.isEmpty || compact.contains("()") || compact.contains("**") || compact.contains("//") || compact.contains("++") || compact.contains("--") {
+                    return nil
+                }
+                
+                // 4. Ganzzahlen als Double schreiben (damit z. B. 5 / 2 = 2.5 statt 2 ergibt)
+                formatted = formatted.replacingOccurrences(
+                    of: #"(?<![\d.])(\d+)(?![\d.])"#,
+                    with: "$1.0",
+                    options: .regularExpression
+                )
+                
+                let parsedExpr = NSExpression(format: formatted)
+                if let result = parsedExpr.expressionValue(with: nil, context: nil) as? NSNumber {
+                    let val = result.doubleValue
+                    return val.isFinite ? val : nil
+                }
+                
+                return nil
     }
     
     private func evaluateSequentialExpression(_ expr: String) -> Double? {
