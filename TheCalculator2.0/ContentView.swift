@@ -9,6 +9,7 @@ enum CalculatorMode: String, CaseIterable, Identifiable {
     case diag = "DIAGNOSE"
     case elektro = "ELEKTRO"
     case hexBin = "BASE/HEX"
+    case psu = "NETZTEIL (PC)"
     
     var id: String { self.rawValue }
 }
@@ -23,9 +24,9 @@ enum AppTheme: String, CaseIterable, Identifiable {
     
     var digitButtonColor: Color {
         switch self {
-        case .proDark: return Color(UIColor.darkGray)
+        case .proDark: return Color(hex: 0x1C1C1E) // Satte, dunkle OLED-Tastenfarbe
         case .cyberPurple: return Color(UIColor.systemPurple).opacity(0.8)
-        case .classicApple: return Color(UIColor.systemGray)
+        case .classicApple: return Color(UIColor.systemGray4)
         case .matrixGreen: return Color(UIColor.systemGreen).opacity(0.2)
         }
     }
@@ -36,6 +37,49 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .cyberPurple: return .purple
         case .matrixGreen: return .green
         }
+    }
+}
+
+enum AngleMode: String, CaseIterable {
+    case deg = "DEG"
+    case rad = "RAD"
+    case gon = "GON"
+    
+    var multiplierToRadians: Double {
+        switch self {
+        case .deg: return .pi / 180.0
+        case .rad: return 1.0
+        case .gon: return .pi / 200.0
+        }
+    }
+    
+    var multiplierFromRadians: Double {
+        switch self {
+        case .deg: return 180.0 / .pi
+        case .rad: return 1.0
+        case .gon: return 200.0 / .pi
+        }
+    }
+}
+
+enum ExportFormat: String, CaseIterable, Identifiable {
+    case txt = "TXT (Protokoll)"
+    case csv = "CSV (Tabelle)"
+    case json = "JSON (Daten)"
+    case markdown = "Markdown"
+    
+    var id: String { self.rawValue }
+}
+
+extension Color {
+    init(hex: UInt, alpha: Double = 1.0) {
+        self.init(
+            .sRGB,
+            red: Double((hex >> 16) & 0xFF) / 255.0,
+            green: Double((hex >> 8) & 0xFF) / 255.0,
+            blue: Double(hex & 0xFF) / 255.0,
+            opacity: alpha
+        )
     }
 }
 
@@ -64,49 +108,52 @@ struct ContentView: View {
     @State private var hasEvaluatedResult: Bool = false
     
     @State private var useOrderOfOperations: Bool = true
-    @State private var useRadDegrees: Bool = false
+    @State private var currentAngleMode: AngleMode = .deg
     
     @State private var memoryValue: Double = 0.0
     @State private var hasMemory: Bool = false
     
-    // Reverse-Konverter (Zeichen -> Code) im BASE/HEX-Modus
     @State private var reverseInputChar: String = "A"
     
-    // Sheets
+    // Sheets & Export
     @State private var history: [HistoryItem] = []
     @State private var showHistorySheet: Bool = false
     @State private var showSettingsSheet: Bool = false
     @State private var showConstantsSheet: Bool = false
     @State private var showITOverlays: Bool = false
     
-    // Dice State (0 = A-Z Buchstaben-Würfel, sonst 6, 10, 20, 100)
+    @State private var selectedExportFormat: ExportFormat = .txt
+    @State private var showExportAlert: Bool = false
+    @State private var exportedString: String = ""
+    
+    // Dice State
     @State private var selectedDiceSides: Int = 6
     
     @State private var showNerdFact: Bool = false
     @State private var currentFact: String = ""
     
     private let nerdFacts: [String] = [
-            "42 – Die Antwort auf das Leben, das Universum und den ganzen Rest. (Und vergiss dein Handtuch nicht!)",
-            "0x2A in Hex, 0b101010 in Binär – und 100 % die richtige Antwort in der IHK-Prüfung.",
-            "Es gibt 10 Arten von Menschen: Die, die Binär verstehen, und die, die es nicht tun.",
-            "Layer-8-Problem erkannt: Der Fehler sitzt meist ca. 40 cm vor dem Monitor.",
-            "Kein Backup, kein Mitleid! (3-2-1-Regel: 3 Kopien, 2 Medien, 1 Offsite.)",
-            "DNS ist immer schuld. Selbst wenn es nicht DNS ist – es war trotzdem DNS.",
-            "Ein UDP-Witz: Ich würde dir ja einen erzählen, aber ich weiß nicht, ob er ankommt.",
-            "Ein TCP-Witz: Hallo, möchtest du einen TCP-Witz hören? – Ja, ich möchte einen TCP-Witz hören. – Okay, hier ist der TCP-Witz.",
-            "127.0.0.1 – Nirgendwo ist es schöner als zu Hause (::1 für IPv6-Profis).",
-            "Merksatz Elektrotechnik: Blau ist Schwarz und Plus ist Minus – zumindest bis es knallt.",
-            "Wer misst, misst Mist – vor allem ohne Bezugspotenzial auf der falschen Messspitze.",
-            "404: Kaffeepause nicht gefunden. Bitte Administrator neu starten.",
-            "Freitag nach eins macht jeder seins – aber bitte vorher kein Produktiv-Update deployen!",
-            "IPv6 hat 3,4 × 10³⁸ Adressen. Das reicht für ca. 42 IP-Adressen pro Sandkorn auf der Erde.",
-            "Widerstand ist zwecklos – zumindest wenn R gegen 0 Ω geht (Kurzschluss!).",
-            "Ein Byte sind 8 Bit. Ein Nibble sind 4 Bit. Und ein Häppchen Pause hat sich jeder verdient.",
-            "RJ45-Crimp-Regel Nr. 1: Erst die Knickschutztülle aufs Kabel schieben, DANN den Stecker crimpen!",
-            "USV-Weisheit: Ein Stromausfall kommt immer exakt 3 Sekunden bevor man auf Speichern drückt.",
-            "ASCII 42 ist das Sternchen '*' – in Regex der Platzhalter für alles, in C der Zeiger auf die Wahrheit.",
-            "Spannungsfall über 3 %? Entweder Kupferquerschnitt erhöhen oder das Rack näher ans Kraftwerk schieben!"
-        ]
+        "42 – Die Antwort auf das Leben, das Universum und den ganzen Rest. (Und vergiss dein Handtuch nicht!)",
+        "0x2A in Hex, 0b101010 in Binär – und 100 % die richtige Antwort in der IHK-Prüfung.",
+        "Es gibt 10 Arten von Menschen: Die, die Binär verstehen, und die, die es nicht tun.",
+        "Layer-8-Problem erkannt: Der Fehler sitzt meist ca. 40 cm vor dem Monitor.",
+        "Kein Backup, kein Mitleid! (3-2-1-Regel: 3 Kopien, 2 Medien, 1 Offsite.)",
+        "DNS ist immer schuld. Selbst wenn es nicht DNS ist – es war trotzdem DNS.",
+        "Ein UDP-Witz: Ich würde dir ja einen erzählen, aber ich weiß nicht, ob er ankommt.",
+        "Ein TCP-Witz: Hallo, möchtest du einen TCP-Witz hören? – Ja, ich möchte einen TCP-Witz hören. – Okay, hier ist der TCP-Witz.",
+        "127.0.0.1 – Nirgendwo ist es schöner als zu Hause (::1 für IPv6-Profis).",
+        "Merksatz Elektrotechnik: Blau ist Schwarz und Plus ist Minus – zumindest bis es knallt.",
+        "Wer misst, misst Mist – vor allem ohne Bezugspotenzial auf der falschen Messspitze.",
+        "404: Kaffeepause nicht gefunden. Bitte Administrator neu starten.",
+        "Freitag nach eins macht jeder seins – aber bitte vorher kein Produktiv-Update deployen!",
+        "IPv6 hat 3,4 × 10³⁸ Adressen. Das reicht für ca. 42 IP-Adressen pro Sandkorn auf der Erde.",
+        "Widerstand ist zwecklos – zumindest wenn R gegen 0 Ω geht (Kurzschluss!).",
+        "Ein Byte sind 8 Bit. Ein Nibble sind 4 Bit. Und ein Häppchen Pause hat sich jeder verdient.",
+        "RJ45-Crimp-Regel Nr. 1: Erst die Knickschutztülle aufs Kabel schieben, DANN den Stecker crimpen!",
+        "USV-Weisheit: Ein Stromausfall kommt immer exakt 3 Sekunden bevor man auf Speichern drückt.",
+        "ASCII 42 ist das Sternchen '*' – in Regex der Platzhalter für alles, in C der Zeiger auf die Wahrheit.",
+        "Spannungsfall über 3 %? Entweder Kupferquerschnitt erhöhen oder das Rack näher ans Kraftwerk schieben!"
+    ]
     
     let physicsConstants: [PhysicsConstant] = [
         PhysicsConstant(name: "Lichtgeschwindigkeit", symbol: "c", value: 299792458, unit: "m/s"),
@@ -124,7 +171,7 @@ struct ContentView: View {
             headerControls
                 .padding(.horizontal, 6)
                 .padding(.top, 2)
-            
+             
             VStack(alignment: .trailing, spacing: 3) {
                 HStack {
                     Text("SYS: READY")
@@ -135,17 +182,26 @@ struct ContentView: View {
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .foregroundColor(.secondary)
                     if selectedMode == .scientific {
-                        Text("• \(useRadDegrees ? "RAD" : "DEG")")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundColor(.orange)
+                        Button(action: {
+                            switch currentAngleMode {
+                            case .deg: currentAngleMode = .rad
+                            case .rad: currentAngleMode = .gon
+                            case .gon: currentAngleMode = .deg
+                            }
+                        }) {
+                            Text("• \(currentAngleMode.rawValue)")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundColor(.orange)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-                
+                 
                 Text(formulaDisplay.isEmpty ? " " : formulaDisplay)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.gray)
                     .lineLimit(1)
-                
+                 
                 HStack {
                     if hasMemory {
                         Text("MEM: \(formatResult(memoryValue))")
@@ -159,7 +215,7 @@ struct ContentView: View {
                             .foregroundColor(.purple)
                     }
                 }
-                
+                 
                 Text(displayValue)
                     .font(.system(size: 32, weight: .bold, design: .monospaced))
                     .minimumScaleFactor(0.35)
@@ -172,7 +228,7 @@ struct ContentView: View {
             .background(Color(UIColor.secondarySystemBackground))
             .cornerRadius(10)
             .padding(.horizontal, 8)
-            
+             
             Group {
                 switch selectedMode {
                 case .basic:
@@ -191,6 +247,8 @@ struct ContentView: View {
                     ElektroView().dismissKeyboardOnTap()
                 case .hexBin:
                     hexBinView.dismissKeyboardOnTap()
+                case .psu:
+                    PowerSupplyView().dismissKeyboardOnTap()
                 }
             }
             .frame(maxHeight: .infinity)
@@ -205,83 +263,87 @@ struct ContentView: View {
             settingsSheetView
         }
         .sheet(isPresented: $showConstantsSheet) {
-                        constantsSheetView
-                    }
-                    .sheet(isPresented: $showITOverlays) {
-                        ITOverlaysView()
-                    }
-                }
-    
+            constantsSheetView
+        }
+        .sheet(isPresented: $showITOverlays) {
+            ITOverlaysView()
+        }
+    }
+     
     private var headerControls: some View {
-            VStack(spacing: 6) {
-                // Zeile 1: Modus-Auswahl & Schnell-Buttons
-                HStack(spacing: 6) {
-                    Picker("Modus", selection: $selectedMode) {
-                        ForEach(CalculatorMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(.primary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color(UIColor.tertiarySystemBackground))
-                    .cornerRadius(8)
-                    .fixedSize(horizontal: true, vertical: false) // Verhindert das unglückliche Umbrechen
-                    
-                    Spacer(minLength: 4)
-                    
-                    Button(action: { showHistorySheet = true }) {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 13, weight: .bold))
-                            .padding(8)
-                            .background(Color(UIColor.tertiarySystemBackground))
-                            .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
-                            .cornerRadius(8)
-                    }
-                    
-                    Button(action: { showSettingsSheet = true }) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .padding(8)
-                            .background(Color(UIColor.tertiarySystemBackground))
-                            .foregroundColor(.gray)
-                            .cornerRadius(8)
-                    }
-                    
-                    Button(action: { showITOverlays = true }) {
-                        Image(systemName: "rectangle.stack.badge.plus")
-                            .font(.system(size: 13, weight: .bold))
-                            .padding(8)
-                            .background(Color(UIColor.tertiarySystemBackground))
-                            .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
-                            .cornerRadius(8)
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Picker("Modus", selection: $selectedMode) {
+                    ForEach(CalculatorMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
                     }
                 }
-                
-                // Zeile 2: Kontext-Schalter (Math/Tisch & DEG/RAD)
-                if selectedMode == .basic || selectedMode == .scientific {
-                    HStack(spacing: 8) {
-                        Toggle(isOn: $useOrderOfOperations) {
-                            Text(useOrderOfOperations ? "Math (Punkt vor Strich)" : "Tischrechner (Sequentiell)")
+                .pickerStyle(.menu)
+                .tint(.primary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color(UIColor.tertiarySystemBackground))
+                .cornerRadius(8)
+                .fixedSize(horizontal: true, vertical: false)
+                 
+                Spacer(minLength: 4)
+                 
+                Button(action: { showHistorySheet = true }) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 13, weight: .bold))
+                        .padding(8)
+                        .background(Color(UIColor.tertiarySystemBackground))
+                        .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
+                        .cornerRadius(8)
+                }
+                 
+                Button(action: { showSettingsSheet = true }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .padding(8)
+                        .background(Color(UIColor.tertiarySystemBackground))
+                        .foregroundColor(.gray)
+                        .cornerRadius(8)
+                }
+                 
+                Button(action: { showITOverlays = true }) {
+                    Image(systemName: "rectangle.stack.badge.plus")
+                        .font(.system(size: 13, weight: .bold))
+                        .padding(8)
+                        .background(Color(UIColor.tertiarySystemBackground))
+                        .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
+                        .cornerRadius(8)
+                }
+            }
+             
+            if selectedMode == .basic || selectedMode == .scientific {
+                HStack(spacing: 8) {
+                    Toggle(isOn: $useOrderOfOperations) {
+                        Text(useOrderOfOperations ? "Math (Punkt vor Strich)" : "Tischrechner (Sequentiell)")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .toggleStyle(.button)
+                    .tint(currentTheme.operatorButtonColor)
+                     
+                    if selectedMode == .scientific {
+                        Button(action: {
+                            switch currentAngleMode {
+                            case .deg: currentAngleMode = .rad
+                            case .rad: currentAngleMode = .gon
+                            case .gon: currentAngleMode = .deg
+                            }
+                        }) {
+                            Text(currentAngleMode.rawValue)
                                 .font(.system(size: 11, weight: .bold))
                         }
-                        .toggleStyle(.button)
-                        .tint(currentTheme.operatorButtonColor)
-                        
-                        if selectedMode == .scientific {
-                            Toggle(isOn: $useRadDegrees) {
-                                Text(useRadDegrees ? "RAD" : "DEG")
-                                    .font(.system(size: 11, weight: .bold))
-                            }
-                            .toggleStyle(.button)
-                            .tint(.blue)
-                            .frame(width: 70)
-                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .frame(width: 70)
                     }
                 }
             }
         }
+    }
 
     private var constantsSheetView: some View {
         NavigationView {
@@ -317,7 +379,7 @@ struct ContentView: View {
             }
         }
     }
-    
+     
     private var settingsSheetView: some View {
         NavigationView {
             Form {
@@ -329,18 +391,18 @@ struct ContentView: View {
                     }
                     .pickerStyle(.menu)
                 }
-                
+                 
                 Section(header: Text("Würfel-Einstellungen")) {
                     Picker("Würfel-Typ", selection: $selectedDiceSides) {
                         Text("d6").tag(6)
                         Text("d10").tag(10)
                         Text("d20").tag(20)
                         Text("d100").tag(100)
-                        Text("d A-Z").tag(0) // 0 steht für Buchstaben-Würfel
+                        Text("d A-Z").tag(0)
                     }
                     .pickerStyle(.segmented)
                 }
-                
+                 
                 Section(header: Text("Über TheCalculator 2.0")) {
                     HStack {
                         Text("Version")
@@ -365,34 +427,57 @@ struct ContentView: View {
             }
         }
     }
-    
+     
     private var historySheetView: some View {
         NavigationView {
-            List {
-                if history.isEmpty {
-                    Text("Noch keine Berechnungen im Verlauf")
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Text("Export-Format:")
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.secondary)
-                        .italic()
-                } else {
-                    ForEach(history.reversed()) { item in
-                        Button(action: {
-                            displayValue = item.result
-                            formulaExpression = item.result
-                            formulaDisplay = "\(item.expression) ="
-                            showHistorySheet = false
-                        }) {
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text(item.expression)
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                                Text("= \(item.result)")
-                                    .font(.system(size: 18, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.primary)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    
+                    Picker("Format", selection: $selectedExportFormat) {
+                        ForEach(ExportFormat.allCases) { format in
+                            Text(format.rawValue).tag(format)
                         }
                     }
-                    .onDelete(perform: deleteHistoryItem)
+                    .pickerStyle(.menu)
+                }
+                .padding(10)
+                .background(Color(UIColor.secondarySystemBackground))
+                
+                List {
+                    if history.isEmpty {
+                        Text("Noch keine Berechnungen im Verlauf")
+                            .foregroundColor(.secondary)
+                            .italic()
+                    } else {
+                        ForEach(history.reversed()) { item in
+                            Button(action: {
+                                displayValue = item.result
+                                let cleanRes = item.result
+                                    .replacingOccurrences(of: "\u{202F}", with: "")
+                                    .replacingOccurrences(of: "\u{200A}", with: "")
+                                    .replacingOccurrences(of: "'", with: "")
+                                    .replacingOccurrences(of: #"(?<=\d)\.(?=\d{3}\b)"#, with: "", options: .regularExpression)
+                                    .replacingOccurrences(of: ",", with: ".")
+                                formulaExpression = cleanRes
+                                formulaDisplay = "\(item.expression) ="
+                                showHistorySheet = false
+                            }) {
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Text(item.expression)
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                    Text("= \(item.result)")
+                                        .font(.system(size: 18, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.primary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                            }
+                        }
+                        .onDelete(perform: deleteHistoryItem)
+                    }
                 }
             }
             .navigationTitle("Rechenverlauf (Tape)")
@@ -400,24 +485,60 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if !history.isEmpty {
-                        Button("Löschen") { history.removeAll() }
-                            .foregroundColor(.red)
+                        Button("Exportieren") {
+                            generateExportData()
+                            showExportAlert = true
+                        }
+                        .foregroundColor(.blue)
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Fertig") { showHistorySheet = false }
                 }
             }
+            .alert(isPresented: $showExportAlert) {
+                Alert(
+                    title: Text("Verlauf exportiert (\(selectedExportFormat.rawValue))"),
+                    message: Text("Die Daten wurden in die Zwischenablage kopiert:\n\n\(exportedString.prefix(150))..."),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
         }
     }
-    
+     
+    private func generateExportData() {
+        switch selectedExportFormat {
+        case .txt:
+            exportedString = history.map { "\($0.expression) = \($0.result)" }.joined(separator: "\n")
+        case .csv:
+            var csv = "Ausdruck;Ergebnis\n"
+            csv += history.map { "\"\($0.expression)\";\"\($0.result)\"" }.joined(separator: "\n")
+            exportedString = csv
+        case .json:
+            let dicts = history.map { ["expression": $0.expression, "result": $0.result] }
+            if let data = try? JSONSerialization.data(withJSONObject: dicts, options: .prettyPrinted),
+               let jsonStr = String(data: data, encoding: .utf8) {
+                exportedString = jsonStr
+            } else {
+                exportedString = "[]"
+            }
+        case .markdown:
+            var md = "| Ausdruck | Ergebnis |\n| --- | --- |\n"
+            md += history.map { "| `\($0.expression)` | **`\($0.result)`** |" }.joined(separator: "\n")
+            exportedString = md
+        }
+        UIPasteboard.general.string = exportedString
+    }
+     
     private func deleteHistoryItem(at offsets: IndexSet) {
         let reversedIndices = offsets.map { history.count - 1 - $0 }
         for index in reversedIndices {
-            history.remove(at: index)
+            if index >= 0 && index < history.count {
+                history.remove(at: index)
+            }
         }
     }
-    
+     
     private var basicCalculatorGrid: some View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
@@ -456,15 +577,15 @@ struct ContentView: View {
                 calcButton("DEL", color: Color(UIColor.systemRed)) { deleteLastChar() }
                 calcButton("+", color: currentTheme.operatorButtonColor) { appendSymbol("+") }
             }
-            
+             
             GeometryReader { geo in
                 HStack(spacing: 4) {
                     calcButton("SWAP", color: .indigo) { swapOperands() }
                         .frame(width: (geo.size.width - 8) * 0.20)
-                    
+                     
                     calcButton("42", color: .purple) { trigger42Fact() }
                         .frame(width: (geo.size.width - 8) * 0.20)
-                    
+                     
                     calcButton("=", color: currentTheme.operatorButtonColor) { calculateResult() }
                         .frame(width: (geo.size.width - 8) * 0.60)
                 }
@@ -473,7 +594,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 8)
     }
-    
+     
     private var scientificCalculatorGrid: some View {
         VStack(spacing: 4) {
             VStack(spacing: 3) {
@@ -507,18 +628,18 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal, 8)
-            
+             
             basicCalculatorGrid
         }
     }
-    
+     
     private func squareScientificButton(_ label: String, action: @escaping () -> Void) -> some View {
         Button(action: {
             hideKeyboard()
             action()
         }) {
             Text(label)
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(UIColor.systemIndigo))
                 .foregroundColor(.white)
@@ -526,12 +647,11 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-    
+     
     private var hexBinView: some View {
         VStack(spacing: 4) {
             ScrollView {
                 VStack(spacing: 6) {
-                    // 1. Bitweise Logik-Operationen
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Bitweise Logik-Operationen").font(.caption).fontWeight(.bold).foregroundColor(.blue)
                         HStack(spacing: 4) {
@@ -547,11 +667,10 @@ struct ContentView: View {
                     .padding(8)
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(8)
-                    
-                    // 2. Basen, ASCII & Unicode (Zahl -> Zeichen & Basen)
+                     
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Basen, ASCII & Unicode").font(.caption).fontWeight(.bold).foregroundColor(.blue)
-                        
+                         
                         let cleanText = displayValue.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
                         let parsedInt: Int64? = {
                             if let d = Double(cleanText), d <= Double(Int64.max), d >= Double(Int64.min), d.truncatingRemainder(dividingBy: 1) == 0 {
@@ -583,62 +702,61 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(8)
-                    
-                    // 3. Reverse-Konverter (Zeichen -> Code)
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Reverse: Zeichen → Code").font(.caption).fontWeight(.bold).foregroundColor(.blue)
-                                            HStack(spacing: 8) {
-                                                TextField("Zeichen", text: $reverseInputChar)
-                                                    .font(.system(size: 18, weight: .bold, design: .monospaced))
-                                                    .multilineTextAlignment(.center)
-                                                    .frame(width: 48, height: 34)
-                                                    .background(Color(UIColor.tertiarySystemBackground))
-                                                    .cornerRadius(6)
-                                                    .submitLabel(.done)
-                                                    .onSubmit { hideKeyboard() }
-                                                    .onChange(of: reverseInputChar) { _, newValue in
-                                                        if let firstChar = newValue.first {
-                                                            let single = String(firstChar)
-                                                            if reverseInputChar != single {
-                                                                reverseInputChar = single
-                                                            }
-                                                        }
-                                                    }
-                                                
-                                                let scalars = Array(reverseInputChar.unicodeScalars)
-                                                if let scalar = scalars.first {
-                                                    let code = Int64(scalar.value)
-                                                    let res = BaseCalculator.convert(value: code)
-                                                    VStack(alignment: .leading, spacing: 2) {
-                                                        Text("DEC: \(res.dec)  |  HEX: \(res.hex) (U+\(String(format: "%04X", scalar.value)))")
-                                                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                                        if scalars.count > 1 {
-                                                            let extra = scalars.dropFirst().map { String(format: "U+%04X", $0.value) }.joined(separator: " ")
-                                                            Text("BIN: \(res.bin) • Sequenz: \(extra)")
-                                                                .font(.system(size: 10, design: .monospaced))
-                                                                .foregroundColor(.orange)
-                                                        } else {
-                                                            Text("BIN: \(res.bin)")
-                                                                .font(.system(size: 10, design: .monospaced))
-                                                                .foregroundColor(.secondary)
-                                                        }
-                                                    }
-                                                } else {
-                                                    Text("Einzelnes Zeichen eingeben (z. B. A, €, 🚀)")
-                                                        .font(.caption2)
-                                                        .foregroundColor(.secondary)
-                                                }
-                                                Spacer(minLength: 0)
-                                            }
+                     
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reverse: Zeichen → Code").font(.caption).fontWeight(.bold).foregroundColor(.blue)
+                        HStack(spacing: 8) {
+                            TextField("Zeichen", text: $reverseInputChar)
+                                .font(.system(size: 18, weight: .bold, design: .monospaced))
+                                .multilineTextAlignment(.center)
+                                .frame(width: 48, height: 34)
+                                .background(Color(UIColor.tertiarySystemBackground))
+                                .cornerRadius(6)
+                                .submitLabel(.done)
+                                .onSubmit { hideKeyboard() }
+                                .onChange(of: reverseInputChar) { _, newValue in
+                                    if let firstChar = newValue.first {
+                                        let single = String(firstChar)
+                                        if reverseInputChar != single {
+                                            reverseInputChar = single
                                         }
-                                        .padding(8)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(Color(UIColor.secondarySystemBackground))
-                                        .cornerRadius(8)
+                                    }
+                                }
+                             
+                            let scalars = Array(reverseInputChar.unicodeScalars)
+                            if let scalar = scalars.first {
+                                let code = Int64(scalar.value)
+                                let res = BaseCalculator.convert(value: code)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("DEC: \(res.dec)  |  HEX: \(res.hex) (U+\(String(format: "%04X", scalar.value)))")
+                                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    if scalars.count > 1 {
+                                        let extra = scalars.dropFirst().map { String(format: "U+%04X", $0.value) }.joined(separator: " ")
+                                        Text("BIN: \(res.bin) Sequenz: \n\(extra)")
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(.orange)
+                                    } else {
+                                        Text("BIN: \(res.bin)")
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            } else {
+                                Text("Einzelnes Zeichen eingeben (z. B. A, €, 🚀)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(8)
                 }
                 .padding(.horizontal, 8)
             }
-            
+             
             HStack(spacing: 3) {
                 calcButton("A", color: Color(UIColor.systemPurple)) { appendDigit("A") }
                 calcButton("B", color: Color(UIColor.systemPurple)) { appendDigit("B") }
@@ -649,18 +767,18 @@ struct ContentView: View {
             }
             .frame(height: 32)
             .padding(.horizontal, 8)
-            
+             
             basicCalculatorGrid
         }
     }
-    
+     
     private func calcButton(_ label: String, color: Color = .blue, textColor: Color = .white, action: @escaping () -> Void) -> some View {
         Button(action: {
             hideKeyboard()
             action()
         }) {
             Text(label)
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 16, weight: .bold))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(color)
                 .foregroundColor(textColor)
@@ -668,7 +786,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-    
+     
     private func generateRandomFloat() {
         let rndVal = Double.random(in: 0.0...1.0)
         let formatted = formatResult(rndVal)
@@ -676,10 +794,9 @@ struct ContentView: View {
         formulaExpression = formatted
         isTypingNewNumber = true
     }
-    
+     
     private func generateDiceRoll() {
         if selectedDiceSides == 0 {
-            // Buchstaben-Würfel A-Z
             let letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
             if let randomLetter = letters.randomElement() {
                 displayValue = String(randomLetter)
@@ -693,14 +810,14 @@ struct ContentView: View {
             isTypingNewNumber = true
         }
     }
-    
+     
     private func generateRandomInt100() {
         let roll = Int.random(in: 1...100)
         displayValue = String(roll)
         formulaExpression = String(roll)
         isTypingNewNumber = true
     }
-    
+     
     private func applyReciprocal() {
         guard let val = Double(displayValue.replacingOccurrences(of: ",", with: ".")), val != 0 else {
             displayValue = "Division durch 0"
@@ -710,24 +827,24 @@ struct ContentView: View {
         let res = 1.0 / val
         displayValue = formatResult(res)
         formulaDisplay = "1/(\(formatResult(val))) ="
-        formulaExpression = formatResult(res)
+        formulaExpression = String(res)
         hasEvaluatedResult = true
         isTypingNewNumber = true
     }
-    
+     
     private func swapOperands() {
         let tokens = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
         if tokens.count == 3 {
             let left = tokens[0]
             let op = tokens[1]
             let right = tokens[2]
-            
+             
             formulaExpression = "\(right) \(op) \(left)"
             formulaDisplay = formulaExpression
             displayValue = right
         }
     }
-    
+     
     private func appendDigit(_ digit: String) {
         if hasEvaluatedResult {
             displayValue = digit
@@ -741,7 +858,11 @@ struct ContentView: View {
         } else {
             if displayValue == "0" {
                 displayValue = digit
-                formulaExpression = String(formulaExpression.dropLast()) + digit
+                if !formulaExpression.isEmpty {
+                    formulaExpression = String(formulaExpression.dropLast()) + digit
+                } else {
+                    formulaExpression = digit
+                }
             } else {
                 displayValue += digit
                 formulaExpression += digit
@@ -749,7 +870,7 @@ struct ContentView: View {
         }
         formulaDisplay = formulaExpression
     }
-    
+     
     private func appendSymbol(_ symbol: String) {
         if hasEvaluatedResult {
             formulaExpression = displayValue + " " + symbol + " "
@@ -764,7 +885,7 @@ struct ContentView: View {
         formulaDisplay = formulaExpression
         isTypingNewNumber = true
     }
-    
+     
     private func appendComma() {
         if hasEvaluatedResult {
             displayValue = "0,"
@@ -781,17 +902,15 @@ struct ContentView: View {
         }
         formulaDisplay = formulaExpression
     }
-    
-    // INTELLIGENTES DEL: Löscht Zahlenzeichen einzeln & Operatoren mit Leerzeichen in 1 Schritt!
+     
     private func deleteLastChar() {
         if !displayValue.isEmpty && displayValue != "0" {
             displayValue.removeLast()
             if displayValue.isEmpty { displayValue = "0" }
         }
-        
+         
         if !formulaExpression.isEmpty {
             if formulaExpression.hasSuffix(" ") {
-                // Wenn Formel auf Leerzeichen endet (Operator z.B. " + "), lösche das gesamte Operator-Paket " Op "
                 let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
                 let components = trimmed.components(separatedBy: " ")
                 if components.count > 1 {
@@ -805,7 +924,7 @@ struct ContentView: View {
         }
         formulaDisplay = formulaExpression
     }
-    
+     
     private func clear() {
         displayValue = "0"
         formulaDisplay = ""
@@ -813,20 +932,20 @@ struct ContentView: View {
         isTypingNewNumber = true
         hasEvaluatedResult = false
     }
-    
+     
     private func trigger42Fact() {
-            let candidates = nerdFacts.filter { $0 != currentFact }
-            currentFact = candidates.randomElement() ?? nerdFacts[0]
-            showNerdFact = true
-        }
-    
+        let candidates = nerdFacts.filter { $0 != currentFact }
+        currentFact = candidates.randomElement() ?? nerdFacts[0]
+        showNerdFact = true
+    }
+     
     private func applySmartPercentage() {
         guard let current = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
-        
+         
         if useOrderOfOperations {
             let pct = current / 100.0
             displayValue = formatResult(pct)
-            
+             
             var components = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
             if !components.isEmpty {
                 components[components.count - 1] = formatResult(pct).replacingOccurrences(of: ",", with: ".")
@@ -838,7 +957,7 @@ struct ContentView: View {
         } else {
             let cleanExpr = formulaExpression.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
             let tokens = cleanExpr.components(separatedBy: " ").filter { !$0.isEmpty }
-            
+             
             if tokens.count >= 2, let baseVal = Double(tokens[0]) {
                 let res = baseVal * (current / 100.0)
                 displayValue = formatResult(res)
@@ -854,33 +973,33 @@ struct ContentView: View {
             }
         }
     }
-    
+     
     private func applyBitwiseOp(_ op: String) {
         appendSymbol(op)
     }
-    
+     
     private func applyBitwiseNot() {
         guard let val = parseHexOrDec(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
         displayValue = String(~val)
     }
-    
+     
     private func calculateResult() {
         let cleanExpr = formulaExpression.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
-        
+         
         if cleanExpr.contains("/ 0") || cleanExpr.contains("÷ 0") {
             displayValue = "Division durch 0 nicht möglich"
             isTypingNewNumber = true
             hasEvaluatedResult = true
             return
         }
-        
+         
         if containsHexOrBitwise(cleanExpr) {
             if let hexResult = evaluateBitwiseExpression(cleanExpr) {
                 let resStr = String(hexResult)
                 displayValue = resStr
                 formulaDisplay = "\(formulaExpression) ="
                 history.append(HistoryItem(expression: formulaExpression, result: resStr))
-                formulaExpression = resStr
+                formulaExpression = String(hexResult)
             } else {
                 displayValue = "Syntaxfehler"
             }
@@ -888,14 +1007,14 @@ struct ContentView: View {
             isTypingNewNumber = true
             return
         }
-        
+         
         let result: Double?
         if useOrderOfOperations {
             result = evaluateMathExpression(cleanExpr)
         } else {
             result = evaluateSequentialExpression(cleanExpr)
         }
-        
+         
         if let res = result {
             if res.isInfinite || res.isNaN {
                 displayValue = "Ungültiger Wert"
@@ -904,7 +1023,7 @@ struct ContentView: View {
                 displayValue = formattedRes
                 formulaDisplay = "\(formulaExpression) ="
                 history.append(HistoryItem(expression: formulaExpression, result: formattedRes))
-                formulaExpression = formattedRes
+                formulaExpression = String(res)
             }
             hasEvaluatedResult = true
             isTypingNewNumber = true
@@ -914,15 +1033,15 @@ struct ContentView: View {
             isTypingNewNumber = true
         }
     }
-    
+     
     private func containsHexOrBitwise(_ expr: String) -> Bool {
         let pureBitwiseOps = ["&", "|", "<<", ">>"]
         let hexChars = ["A", "B", "C", "D", "E", "F"]
-        
+         
         if pureBitwiseOps.contains(where: { expr.contains($0) }) || hexChars.contains(where: { expr.contains($0) }) {
             return true
         }
-        
+         
         if expr.contains("^") {
             let tokens = expr.components(separatedBy: " ").filter { !$0.isEmpty }
             for token in tokens {
@@ -931,14 +1050,13 @@ struct ContentView: View {
                 }
             }
         }
-        
+         
         return false
     }
-    
+     
     private func evaluateBitwiseExpression(_ expr: String) -> Int64? {
         let trimmed = expr.trimmingCharacters(in: .whitespaces)
-        
-        // Unäres NOT (~wert)
+         
         if trimmed.hasPrefix("~") {
             let operandStr = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
             if let val = parseHexOrDec(operandStr) {
@@ -946,23 +1064,20 @@ struct ContentView: View {
             }
             return nil
         }
-        
-        // Ausdrücke in Tokens zerlegen (z. B. ["54", "+", "36", "+", "E"])
+         
         let tokens = trimmed.components(separatedBy: " ").filter { !$0.isEmpty }
         guard !tokens.isEmpty, let firstVal = parseHexOrDec(tokens[0]) else {
             return nil
         }
-        
-        // Einzelner Wert ohne Operator (z. B. "FF")
+         
         if tokens.count == 1 {
             return firstVal
         }
-        
-        // Ketten-Auswertung von links nach rechts (ungerade Token-Anzahl: Wert Op Wert Op Wert ...)
+         
         guard tokens.count >= 3 && tokens.count % 2 == 1 else {
             return nil
         }
-        
+         
         var accumulator = firstVal
         var i = 1
         while i < tokens.count - 1 {
@@ -970,7 +1085,7 @@ struct ContentView: View {
             guard let nextVal = parseHexOrDec(tokens[i + 1]) else {
                 return nil
             }
-            
+             
             switch op {
             case "&": accumulator = accumulator & nextVal
             case "|": accumulator = accumulator | nextVal
@@ -988,14 +1103,14 @@ struct ContentView: View {
             }
             i += 2
         }
-        
+         
         return accumulator
     }
-    
+     
     private func parseHexOrDec(_ str: String) -> Int64? {
         let clean = str.replacingOccurrences(of: "0x", with: "")
-                       .replacingOccurrences(of: "0X", with: "")
-                       .trimmingCharacters(in: .whitespaces)
+                     .replacingOccurrences(of: "0X", with: "")
+                     .trimmingCharacters(in: .whitespaces)
         if selectedMode == .hexBin || clean.rangeOfCharacter(from: CharacterSet(charactersIn: "ABCDEFabcdef")) != nil {
             return Int64(clean, radix: 16)
         }
@@ -1003,14 +1118,22 @@ struct ContentView: View {
     }
 
     private func evaluateMathExpression(_ expr: String) -> Double? {
-        var clean = expr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
-        
+        let rawExpr = expr
+            .replacingOccurrences(of: "\u{202F}", with: "")
+            .replacingOccurrences(of: "\u{2009}", with: "")
+            .replacingOccurrences(of: "\u{200A}", with: "")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: #"(?<=\d)\.(?=\d{3}\b)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: " ", with: "")
+         
+        var clean = rawExpr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
+         
         while clean.hasPrefix("×") || clean.hasPrefix("÷") || clean.hasPrefix("*") || clean.hasPrefix("/") || clean.hasPrefix("%") {
             clean = String(clean.dropFirst()).trimmingCharacters(in: .whitespaces)
         }
-        
+         
         guard !clean.isEmpty else { return nil }
-        
+         
         if clean.contains("^") {
             let parts = clean.components(separatedBy: "^")
             if parts.count == 2 {
@@ -1021,14 +1144,14 @@ struct ContentView: View {
                 }
             }
         }
-        
+         
         if containsHexOrBitwise(clean) {
             if let bitRes = evaluateBitwiseExpression(clean) {
                 return Double(bitRes)
             }
             return nil
         }
-        
+         
         if clean.contains("mod") || clean.contains("%") {
             let modSymbol = clean.contains("mod") ? "mod" : "%"
             let parts = clean.components(separatedBy: " \(modSymbol) ")
@@ -1041,55 +1164,59 @@ struct ContentView: View {
         }
 
         var formatted = clean
-                    .replacingOccurrences(of: "×", with: "*")
-                    .replacingOccurrences(of: "÷", with: "/")
-                
-                // 1. Implizite Multiplikation vor "(" und nach ")" ergänzen: z. B. "5 ( 2 + 2 )" -> "5 * ( 2 + 2 )"
-                formatted = formatted.replacingOccurrences(
-                    of: #"(\d|\))\s*\("#,
-                    with: "$1 * (",
-                    options: .regularExpression
-                )
-                formatted = formatted.replacingOccurrences(
-                    of: #"\)\s*(\d)"#,
-                    with: ") * $1",
-                    options: .regularExpression
-                )
-                
-                // 2. Prüfen, ob Klammern balanciert sind (sonst wirft NSExpression eine NSException!)
-                var parenBalance = 0
-                for char in formatted {
-                    if char == "(" { parenBalance += 1 }
-                    else if char == ")" { parenBalance -= 1 }
-                    if parenBalance < 0 { return nil }
-                }
-                if parenBalance != 0 { return nil }
-                
-                // 3. Leere Klammern "()" oder doppelte Operatoren abfangen
-                let compact = formatted.replacingOccurrences(of: " ", with: "")
-                if compact.isEmpty || compact.contains("()") || compact.contains("**") || compact.contains("//") || compact.contains("++") || compact.contains("--") {
-                    return nil
-                }
-                
-                // 4. Ganzzahlen als Double schreiben (damit z. B. 5 / 2 = 2.5 statt 2 ergibt)
-                formatted = formatted.replacingOccurrences(
-                    of: #"(?<![\d.])(\d+)(?![\d.])"#,
-                    with: "$1.0",
-                    options: .regularExpression
-                )
-                
-                let parsedExpr = NSExpression(format: formatted)
-                if let result = parsedExpr.expressionValue(with: nil, context: nil) as? NSNumber {
-                    let val = result.doubleValue
-                    return val.isFinite ? val : nil
-                }
-                
-                return nil
+            .replacingOccurrences(of: "×", with: "*")
+            .replacingOccurrences(of: "÷", with: "/")
+                 
+        formatted = formatted.replacingOccurrences(
+            of: #"(\d|\))\s*\("#,
+            with: "$1 * (",
+            options: .regularExpression
+        )
+        formatted = formatted.replacingOccurrences(
+            of: #"\)\s*(\d)"#,
+            with: ") * $1",
+            options: .regularExpression
+        )
+                 
+        var parenBalance = 0
+        for char in formatted {
+            if char == "(" { parenBalance += 1 }
+            else if char == ")" { parenBalance -= 1 }
+            if parenBalance < 0 { return nil }
+        }
+        if parenBalance != 0 { return nil }
+                 
+        let compact = formatted.replacingOccurrences(of: " ", with: "")
+        if compact.isEmpty || compact.contains("()") || compact.contains("**") || compact.contains("//") || compact.contains("++") || compact.contains("--") {
+            return nil
+        }
+                 
+        formatted = formatted.replacingOccurrences(
+            of: #"(?<![\d.])(\d+)(?![\d.])"#,
+            with: "$1.0",
+            options: .regularExpression
+        )
+                 
+        let parsedExpr = NSExpression(format: formatted)
+        if let result = parsedExpr.expressionValue(with: nil, context: nil) as? NSNumber {
+            let val = result.doubleValue
+            return val.isFinite ? val : nil
+        }
+                 
+        return nil
     }
-    
+     
     private func evaluateSequentialExpression(_ expr: String) -> Double? {
-        var clean = expr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
-        
+        let rawExpr = expr
+            .replacingOccurrences(of: "\u{202F}", with: "")
+            .replacingOccurrences(of: "\u{2009}", with: "")
+            .replacingOccurrences(of: "\u{200A}", with: "")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: #"(?<=\d)\.(?=\d{3}\b)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: " ", with: "")
+
+        var clean = rawExpr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
+         
         while let rangeOfOpen = clean.range(of: "("), let rangeOfClose = clean.range(of: ")") {
             let innerExpr = String(clean[rangeOfOpen.upperBound..<rangeOfClose.lowerBound])
             if let innerResult = evaluateSequentialExpression(innerExpr) {
@@ -1098,15 +1225,15 @@ struct ContentView: View {
                 break
             }
         }
-        
+         
         let tokens = clean.components(separatedBy: " ").filter { !$0.isEmpty }
         guard var runningResult = Double(tokens.first ?? "") else { return nil }
-        
+         
         var idx = 1
         while idx < tokens.count - 1 {
             let op = tokens[idx]
             guard let nextVal = Double(tokens[idx + 1]) else { break }
-            
+             
             switch op {
             case "+": runningResult += nextVal
             case "-": runningResult -= nextVal
@@ -1124,14 +1251,14 @@ struct ContentView: View {
         }
         return runningResult
     }
-    
+     
     private func applyScientificFunc(_ function: String) {
         guard let val = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
         var res: Double = 0.0
-        
-        let angleMultiplier = useRadDegrees ? 1.0 : (.pi / 180.0)
-        let invAngleMultiplier = useRadDegrees ? 1.0 : (180.0 / .pi)
-        
+         
+        let angleMultiplier = currentAngleMode.multiplierToRadians
+        let invAngleMultiplier = currentAngleMode.multiplierFromRadians
+         
         switch function {
         case "sin": res = sin(val * angleMultiplier)
         case "cos": res = cos(val * angleMultiplier)
@@ -1158,7 +1285,7 @@ struct ContentView: View {
             res = factorial(Int(val))
         default: break
         }
-        
+         
         let exprStr = "\(function)(\(formatResult(val)))"
         formulaDisplay = "\(exprStr) ="
         let resStr = formatResult(res)
@@ -1168,7 +1295,7 @@ struct ContentView: View {
         hasEvaluatedResult = true
         isTypingNewNumber = true
     }
-    
+     
     private func factorial(_ n: Int) -> Double {
         guard n >= 0 else { return 0 }
         if n == 0 || n == 1 { return 1 }
@@ -1176,7 +1303,7 @@ struct ContentView: View {
         for i in 2...min(n, 170) { fact *= Double(i) }
         return fact
     }
-    
+     
     private func memoryClear() { memoryValue = 0.0; hasMemory = false }
     private func memoryRecall() { displayValue = formatResult(memoryValue); isTypingNewNumber = true }
     private func memoryAdd() {
@@ -1189,15 +1316,19 @@ struct ContentView: View {
             memoryValue -= val; hasMemory = true; isTypingNewNumber = true
         }
     }
-    
+     
     private func formatResult(_ val: Double) -> String {
-        if val.truncatingRemainder(dividingBy: 1) == 0 {
-            return String(format: "%.0f", val)
-        } else {
-            return String(format: "%.4f", val).replacingOccurrences(of: ".", with: ",")
-        }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "de_DE")
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 4
+        formatter.usesGroupingSeparator = true
+        formatter.groupingSeparator = "."
+         
+        return formatter.string(from: NSNumber(value: val)) ?? "\(val)"
     }
-    
+     
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }

@@ -12,6 +12,8 @@
   },
   "files": [
     { "path": "BaseCalculator.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
+    { "path": "PowerSupplyCalculator.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
+    { "path": "PowerSupplyView.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
     { "path": "ElektroCalculator.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
     { "path": "ElektroView.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
     { "path": "File.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
