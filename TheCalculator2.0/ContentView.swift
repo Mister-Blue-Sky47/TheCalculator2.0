@@ -10,8 +10,9 @@ enum CalculatorMode: String, CaseIterable, Identifiable {
     case elektro = "ELEKTRO"
     case hexBin = "BASE/HEX"
     case psu = "NETZTEIL (PC)"
-    
-    var id: String { self.rawValue }
+    case volleyball = "Volleyball" // Korrekt als String-Case eingebunden
+
+    var id: String { self.rawValue } // oder dein bestehender rawValue Identifier
 }
 
 enum AppTheme: String, CaseIterable, Identifiable {
@@ -98,6 +99,7 @@ struct PhysicsConstant: Identifiable {
 }
 
 struct ContentView: View {
+    @Environment(\.colorScheme) var colorScheme
     @State private var selectedMode: CalculatorMode = .basic
     @State private var currentTheme: AppTheme = .proDark
     
@@ -225,7 +227,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(Color(UIColor.secondarySystemBackground))
+            .background(colorScheme == .dark ? Color.clear : Color(UIColor.secondarySystemBackground))
             .cornerRadius(10)
             .padding(.horizontal, 8)
              
@@ -249,6 +251,8 @@ struct ContentView: View {
                     hexBinView.dismissKeyboardOnTap()
                 case .psu:
                     PowerSupplyView().dismissKeyboardOnTap()
+                case .volleyball:
+                    VolleyballView()
                 }
             }
             .frame(maxHeight: .infinity)
@@ -282,7 +286,7 @@ struct ContentView: View {
                 .tint(.primary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color(UIColor.tertiarySystemBackground))
+                .background(colorScheme == .dark ? Color.clear : Color(UIColor.tertiarySystemBackground))
                 .cornerRadius(8)
                 .fixedSize(horizontal: true, vertical: false)
                  
@@ -292,28 +296,31 @@ struct ContentView: View {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.system(size: 13, weight: .bold))
                         .padding(8)
-                        .background(Color(UIColor.tertiarySystemBackground))
+                        .background(colorScheme == .dark ? Color.clear : Color(UIColor.tertiarySystemBackground))
                         .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
                         .cornerRadius(8)
                 }
+                .buttonStyle(.plain)
                  
                 Button(action: { showSettingsSheet = true }) {
                     Image(systemName: "gearshape.fill")
                         .font(.system(size: 13, weight: .bold))
                         .padding(8)
-                        .background(Color(UIColor.tertiarySystemBackground))
+                        .background(colorScheme == .dark ? Color.clear : Color(UIColor.tertiarySystemBackground))
                         .foregroundColor(.gray)
                         .cornerRadius(8)
                 }
+                .buttonStyle(.plain)
                  
                 Button(action: { showITOverlays = true }) {
                     Image(systemName: "rectangle.stack.badge.plus")
                         .font(.system(size: 13, weight: .bold))
                         .padding(8)
-                        .background(Color(UIColor.tertiarySystemBackground))
+                        .background(colorScheme == .dark ? Color.clear : Color(UIColor.tertiarySystemBackground))
                         .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
                         .cornerRadius(8)
                 }
+                .buttonStyle(.plain)
             }
              
             if selectedMode == .basic || selectedMode == .scientific {
@@ -435,7 +442,7 @@ struct ContentView: View {
                     Text("Export-Format:")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.secondary)
-                    
+                     
                     Picker("Format", selection: $selectedExportFormat) {
                         ForEach(ExportFormat.allCases) { format in
                             Text(format.rawValue).tag(format)
@@ -445,7 +452,7 @@ struct ContentView: View {
                 }
                 .padding(10)
                 .background(Color(UIColor.secondarySystemBackground))
-                
+                 
                 List {
                     if history.isEmpty {
                         Text("Noch keine Berechnungen im Verlauf")
@@ -1109,8 +1116,8 @@ struct ContentView: View {
      
     private func parseHexOrDec(_ str: String) -> Int64? {
         let clean = str.replacingOccurrences(of: "0x", with: "")
-                     .replacingOccurrences(of: "0X", with: "")
-                     .trimmingCharacters(in: .whitespaces)
+                      .replacingOccurrences(of: "0X", with: "")
+                      .trimmingCharacters(in: .whitespaces)
         if selectedMode == .hexBin || clean.rangeOfCharacter(from: CharacterSet(charactersIn: "ABCDEFabcdef")) != nil {
             return Int64(clean, radix: 16)
         }
