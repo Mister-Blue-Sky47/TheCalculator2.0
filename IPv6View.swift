@@ -1,3 +1,10 @@
+//
+//  IPv6View.swift
+//  TheCalculator2.0
+//
+//  Created by Steffen Beier on 16.11.26.
+//
+
 import SwiftUI
 
 struct IPv6View: View {
@@ -68,6 +75,10 @@ struct IPv6View: View {
                         IPv6ResultRow(label: "Komprimierte Adresse", value: res.compressedAddress)
                         IPv6ResultRow(label: "Netzwerk-Präfix", value: res.networkPrefix)
                         IPv6ResultRow(label: "Mögliche /64 Subnetze", value: res.totalSubnetsPrefix64)
+                        
+                        // Hinzugefügt: Reverse DNS / PTR-Notation für Mitschüler-Anregung
+                        Divider()
+                        IPv6ResultRow(label: "Reverse DNS (ip6.arpa)", value: generateReversePTR(for: res.expandedAddress))
                     }
                     .padding()
                     .background(Color(UIColor.secondarySystemBackground))
@@ -83,6 +94,14 @@ struct IPv6View: View {
     
     private func calculate() {
         result = IPv6Calculator.calculate(address: inputAddress, prefix: selectedPrefix)
+    }
+    
+    // Generiert die ip6.arpa Reverse-Notation (Nibble-weise umgedreht mit Punkten)
+    private func generateReversePTR(for expandedIP: String) -> String {
+        let hexDigits = expandedIP.replacingOccurrences(of: ":", with: "")
+        guard hexDigits.count == 32 else { return "Ungültig" }
+        let reversedNibbles = Array(hexDigits).reversed().map { String($0) }
+        return reversedNibbles.joined(separator: ".") + ".ip6.arpa"
     }
 }
 

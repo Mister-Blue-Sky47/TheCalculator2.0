@@ -1,3 +1,10 @@
+//
+//  ContentView.swift
+//  TheCalculator2.0
+//
+//  Created by Steffen Beier on 16.11.26.
+//
+
 import SwiftUI
 
 enum CalculatorMode: String, CaseIterable, Identifiable {
@@ -10,9 +17,11 @@ enum CalculatorMode: String, CaseIterable, Identifiable {
     case elektro = "ELEKTRO"
     case hexBin = "BASE/HEX"
     case psu = "NETZTEIL (PC)"
-    case volleyball = "Volleyball" // Korrekt als String-Case eingebunden
+    case volleyball = "Volleyball"
+    case sokoban = "Sokoban Mini-Game"
+    case constants = "KONSTANTEN"
 
-    var id: String { self.rawValue } // oder dein bestehender rawValue Identifier
+    var id: String { self.rawValue }
 }
 
 enum AppTheme: String, CaseIterable, Identifiable {
@@ -25,7 +34,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
     
     var digitButtonColor: Color {
         switch self {
-        case .proDark: return Color(hex: 0x1C1C1E) // Satte, dunkle OLED-Tastenfarbe
+        case .proDark: return Color(hex: 0x1C1C1E)
         case .cyberPurple: return Color(UIColor.systemPurple).opacity(0.8)
         case .classicApple: return Color(UIColor.systemGray4)
         case .matrixGreen: return Color(UIColor.systemGreen).opacity(0.2)
@@ -37,6 +46,26 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .proDark, .classicApple: return .orange
         case .cyberPurple: return .purple
         case .matrixGreen: return .green
+        }
+    }
+    
+    // Dynamischer Hintergrund passend zum gewählten Theme
+    var backgroundColor: Color {
+        switch self {
+        case .proDark: return .black
+        case .cyberPurple: return Color(hex: 0x0D0221) // Sehr dunkles Cyber-Lila/Schwarz
+        case .classicApple: return Color(UIColor.systemGroupedBackground)
+        case .matrixGreen: return .black
+        }
+    }
+    
+    // Hintergrund für das Display / Header-Bereiche
+    var displayBackgroundColor: Color {
+        switch self {
+        case .proDark: return Color(hex: 0x111111)
+        case .cyberPurple: return Color(UIColor.systemPurple).opacity(0.15)
+        case .classicApple: return Color(UIColor.secondarySystemBackground)
+        case .matrixGreen: return Color.green.opacity(0.1)
         }
     }
 }
@@ -101,7 +130,7 @@ struct PhysicsConstant: Identifiable {
 struct ContentView: View {
     @Environment(\.colorScheme) var colorScheme
     @State private var selectedMode: CalculatorMode = .basic
-    @State private var currentTheme: AppTheme = .proDark
+    @AppStorage("selectedAppTheme") private var currentTheme: AppTheme = .proDark
     
     @State private var displayValue: String = "0"
     @State private var formulaDisplay: String = ""
@@ -169,94 +198,105 @@ struct ContentView: View {
     ]
 
     var body: some View {
-        VStack(spacing: 4) {
-            headerControls
-                .padding(.horizontal, 6)
-                .padding(.top, 2)
-             
-            VStack(alignment: .trailing, spacing: 3) {
-                HStack {
-                    Text("SYS: READY")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundColor(.green)
-                    Spacer()
-                    Text("MODE: \(selectedMode.rawValue)")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundColor(.secondary)
-                    if selectedMode == .scientific {
-                        Button(action: {
-                            switch currentAngleMode {
-                            case .deg: currentAngleMode = .rad
-                            case .rad: currentAngleMode = .gon
-                            case .gon: currentAngleMode = .deg
+        ZStack {
+            // Dynamischer Hintergrund passend zum gewählten Theme
+            currentTheme.backgroundColor
+                .ignoresSafeArea()
+            
+            VStack(spacing: 4) {
+                headerControls
+                    .padding(.horizontal, 6)
+                    .padding(.top, 2)
+                 
+                VStack(alignment: .trailing, spacing: 3) {
+                    HStack {
+                        Text("SYS: READY")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(.green)
+                        Spacer()
+                        Text("MODE: \(selectedMode.rawValue)")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        if selectedMode == .scientific {
+                            Button(action: {
+                                switch currentAngleMode {
+                                case .deg: currentAngleMode = .rad
+                                case .rad: currentAngleMode = .gon
+                                case .gon: currentAngleMode = .deg
+                                }
+                            }) {
+                                Text("• \(currentAngleMode.rawValue)")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.orange)
                             }
-                        }) {
-                            Text("• \(currentAngleMode.rawValue)")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .buttonStyle(.plain)
+                        }
+                    }
+                     
+                    Text(formulaDisplay.isEmpty ? " " : formulaDisplay)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                     
+                    HStack {
+                        if hasMemory {
+                            Text("MEM: \(formatResult(memoryValue))")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
                                 .foregroundColor(.orange)
                         }
-                        .buttonStyle(.plain)
+                        Spacer()
+                        if displayValue == "42" || displayValue == "42,0" || displayValue == "42.0" {
+                            Text("(Ultimate Answer)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.purple)
+                        }
+                    }
+                     
+                    Text(displayValue)
+                        .font(.system(size: 32, weight: .bold, design: .monospaced))
+                        .minimumScaleFactor(0.35)
+                        .lineLimit(1)
+                        .foregroundColor(currentTheme == .matrixGreen ? .green : .primary)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(currentTheme.displayBackgroundColor) // Dynamischer Display-Hintergrund
+                .cornerRadius(10)
+                .padding(.horizontal, 8)
+                 
+                Group {
+                    switch selectedMode {
+                    case .basic:
+                        basicCalculatorGrid
+                    case .scientific:
+                        scientificCalculatorGrid
+                    case .units:
+                        UnitConverterView().dismissKeyboardOnTap()
+                    case .subnet:
+                        SubnetView().dismissKeyboardOnTap()
+                    case .ipv6:
+                        IPv6View().dismissKeyboardOnTap()
+                    case .diag:
+                        NetworkDiagnosticView().dismissKeyboardOnTap()
+                    case .elektro:
+                        ElektroView().dismissKeyboardOnTap()
+                    case .hexBin:
+                        hexBinView.dismissKeyboardOnTap()
+                    case .psu:
+                        PowerSupplyView().dismissKeyboardOnTap()
+                    case .volleyball:
+                        VolleyballView()
+                    case .sokoban:
+                        SokobanView()
+                    case .constants:
+                        ScientificView().dismissKeyboardOnTap()
                     }
                 }
-                 
-                Text(formulaDisplay.isEmpty ? " " : formulaDisplay)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.gray)
-                    .lineLimit(1)
-                 
-                HStack {
-                    if hasMemory {
-                        Text("MEM: \(formatResult(memoryValue))")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(.orange)
-                    }
-                    Spacer()
-                    if displayValue == "42" || displayValue == "42,0" || displayValue == "42.0" {
-                        Text("(Ultimate Answer)")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.purple)
-                    }
-                }
-                 
-                Text(displayValue)
-                    .font(.system(size: 32, weight: .bold, design: .monospaced))
-                    .minimumScaleFactor(0.35)
-                    .lineLimit(1)
-                    .foregroundColor(currentTheme == .matrixGreen ? .green : .primary)
+                .frame(maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(colorScheme == .dark ? Color.clear : Color(UIColor.secondarySystemBackground))
-            .cornerRadius(10)
-            .padding(.horizontal, 8)
-             
-            Group {
-                switch selectedMode {
-                case .basic:
-                    basicCalculatorGrid
-                case .scientific:
-                    scientificCalculatorGrid
-                case .units:
-                    UnitConverterView().dismissKeyboardOnTap()
-                case .subnet:
-                    SubnetView().dismissKeyboardOnTap()
-                case .ipv6:
-                    IPv6View().dismissKeyboardOnTap()
-                case .diag:
-                    NetworkDiagnosticView().dismissKeyboardOnTap()
-                case .elektro:
-                    ElektroView().dismissKeyboardOnTap()
-                case .hexBin:
-                    hexBinView.dismissKeyboardOnTap()
-                case .psu:
-                    PowerSupplyView().dismissKeyboardOnTap()
-                case .volleyball:
-                    VolleyballView()
-                }
-            }
-            .frame(maxHeight: .infinity)
         }
+        .preferredColorScheme(currentTheme == .classicApple ? .light : .dark)
         .alert(isPresented: $showNerdFact) {
             Alert(title: Text("42 – Die Antwort auf ALLES"), message: Text(currentFact), dismissButton: .default(Text("OK")))
         }
@@ -273,7 +313,7 @@ struct ContentView: View {
             ITOverlaysView()
         }
     }
-     
+      
     private var headerControls: some View {
         VStack(spacing: 6) {
             HStack(spacing: 6) {
@@ -286,7 +326,7 @@ struct ContentView: View {
                 .tint(.primary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(colorScheme == .dark ? Color.clear : Color(UIColor.tertiarySystemBackground))
+                .background(Color(.tertiarySystemBackground).opacity(0.3))
                 .cornerRadius(8)
                 .fixedSize(horizontal: true, vertical: false)
                  
@@ -296,7 +336,7 @@ struct ContentView: View {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.system(size: 13, weight: .bold))
                         .padding(8)
-                        .background(colorScheme == .dark ? Color.clear : Color(UIColor.tertiarySystemBackground))
+                        .background(Color(.tertiarySystemBackground).opacity(0.3))
                         .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
                         .cornerRadius(8)
                 }
@@ -306,7 +346,7 @@ struct ContentView: View {
                     Image(systemName: "gearshape.fill")
                         .font(.system(size: 13, weight: .bold))
                         .padding(8)
-                        .background(colorScheme == .dark ? Color.clear : Color(UIColor.tertiarySystemBackground))
+                        .background(Color(.tertiarySystemBackground).opacity(0.3))
                         .foregroundColor(.gray)
                         .cornerRadius(8)
                 }
@@ -316,7 +356,7 @@ struct ContentView: View {
                     Image(systemName: "rectangle.stack.badge.plus")
                         .font(.system(size: 13, weight: .bold))
                         .padding(8)
-                        .background(colorScheme == .dark ? Color.clear : Color(UIColor.tertiarySystemBackground))
+                        .background(Color(.tertiarySystemBackground).opacity(0.3))
                         .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
                         .cornerRadius(8)
                 }
@@ -386,7 +426,7 @@ struct ContentView: View {
             }
         }
     }
-     
+      
     private var settingsSheetView: some View {
         NavigationView {
             Form {
@@ -434,7 +474,7 @@ struct ContentView: View {
             }
         }
     }
-     
+      
     private var historySheetView: some View {
         NavigationView {
             VStack(spacing: 0) {
@@ -512,7 +552,7 @@ struct ContentView: View {
             }
         }
     }
-     
+      
     private func generateExportData() {
         switch selectedExportFormat {
         case .txt:
@@ -536,7 +576,7 @@ struct ContentView: View {
         }
         UIPasteboard.general.string = exportedString
     }
-     
+      
     private func deleteHistoryItem(at offsets: IndexSet) {
         let reversedIndices = offsets.map { history.count - 1 - $0 }
         for index in reversedIndices {
@@ -545,7 +585,7 @@ struct ContentView: View {
             }
         }
     }
-     
+      
     private var basicCalculatorGrid: some View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
@@ -601,7 +641,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 8)
     }
-     
+      
     private var scientificCalculatorGrid: some View {
         VStack(spacing: 4) {
             VStack(spacing: 3) {
@@ -639,7 +679,7 @@ struct ContentView: View {
             basicCalculatorGrid
         }
     }
-     
+      
     private func squareScientificButton(_ label: String, action: @escaping () -> Void) -> some View {
         Button(action: {
             hideKeyboard()
@@ -654,7 +694,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-     
+      
     private var hexBinView: some View {
         VStack(spacing: 4) {
             ScrollView {
@@ -778,7 +818,7 @@ struct ContentView: View {
             basicCalculatorGrid
         }
     }
-     
+      
     private func calcButton(_ label: String, color: Color = .blue, textColor: Color = .white, action: @escaping () -> Void) -> some View {
         Button(action: {
             hideKeyboard()
@@ -793,7 +833,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-     
+      
     private func generateRandomFloat() {
         let rndVal = Double.random(in: 0.0...1.0)
         let formatted = formatResult(rndVal)
@@ -801,7 +841,7 @@ struct ContentView: View {
         formulaExpression = formatted
         isTypingNewNumber = true
     }
-     
+      
     private func generateDiceRoll() {
         if selectedDiceSides == 0 {
             let letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -817,14 +857,14 @@ struct ContentView: View {
             isTypingNewNumber = true
         }
     }
-     
+      
     private func generateRandomInt100() {
         let roll = Int.random(in: 1...100)
         displayValue = String(roll)
         formulaExpression = String(roll)
         isTypingNewNumber = true
     }
-     
+      
     private func applyReciprocal() {
         guard let val = Double(displayValue.replacingOccurrences(of: ",", with: ".")), val != 0 else {
             displayValue = "Division durch 0"
@@ -838,7 +878,7 @@ struct ContentView: View {
         hasEvaluatedResult = true
         isTypingNewNumber = true
     }
-     
+      
     private func swapOperands() {
         let tokens = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
         if tokens.count == 3 {
@@ -851,7 +891,7 @@ struct ContentView: View {
             displayValue = right
         }
     }
-     
+      
     private func appendDigit(_ digit: String) {
         if hasEvaluatedResult {
             displayValue = digit
@@ -877,7 +917,7 @@ struct ContentView: View {
         }
         formulaDisplay = formulaExpression
     }
-     
+      
     private func appendSymbol(_ symbol: String) {
         if hasEvaluatedResult {
             formulaExpression = displayValue + " " + symbol + " "
@@ -892,7 +932,7 @@ struct ContentView: View {
         formulaDisplay = formulaExpression
         isTypingNewNumber = true
     }
-     
+      
     private func appendComma() {
         if hasEvaluatedResult {
             displayValue = "0,"
@@ -909,7 +949,7 @@ struct ContentView: View {
         }
         formulaDisplay = formulaExpression
     }
-     
+      
     private func deleteLastChar() {
         if !displayValue.isEmpty && displayValue != "0" {
             displayValue.removeLast()
@@ -931,7 +971,7 @@ struct ContentView: View {
         }
         formulaDisplay = formulaExpression
     }
-     
+      
     private func clear() {
         displayValue = "0"
         formulaDisplay = ""
@@ -939,13 +979,13 @@ struct ContentView: View {
         isTypingNewNumber = true
         hasEvaluatedResult = false
     }
-     
+      
     private func trigger42Fact() {
         let candidates = nerdFacts.filter { $0 != currentFact }
         currentFact = candidates.randomElement() ?? nerdFacts[0]
         showNerdFact = true
     }
-     
+      
     private func applySmartPercentage() {
         guard let current = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
          
@@ -980,16 +1020,16 @@ struct ContentView: View {
             }
         }
     }
-     
+      
     private func applyBitwiseOp(_ op: String) {
         appendSymbol(op)
     }
-     
+      
     private func applyBitwiseNot() {
         guard let val = parseHexOrDec(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
         displayValue = String(~val)
     }
-     
+      
     private func calculateResult() {
         let cleanExpr = formulaExpression.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
          
@@ -1040,7 +1080,7 @@ struct ContentView: View {
             isTypingNewNumber = true
         }
     }
-     
+      
     private func containsHexOrBitwise(_ expr: String) -> Bool {
         let pureBitwiseOps = ["&", "|", "<<", ">>"]
         let hexChars = ["A", "B", "C", "D", "E", "F"]
@@ -1060,7 +1100,7 @@ struct ContentView: View {
          
         return false
     }
-     
+      
     private func evaluateBitwiseExpression(_ expr: String) -> Int64? {
         let trimmed = expr.trimmingCharacters(in: .whitespaces)
          
@@ -1113,11 +1153,11 @@ struct ContentView: View {
          
         return accumulator
     }
-     
+      
     private func parseHexOrDec(_ str: String) -> Int64? {
         let clean = str.replacingOccurrences(of: "0x", with: "")
-                      .replacingOccurrences(of: "0X", with: "")
-                      .trimmingCharacters(in: .whitespaces)
+                     .replacingOccurrences(of: "0X", with: "")
+                     .trimmingCharacters(in: .whitespaces)
         if selectedMode == .hexBin || clean.rangeOfCharacter(from: CharacterSet(charactersIn: "ABCDEFabcdef")) != nil {
             return Int64(clean, radix: 16)
         }
@@ -1212,7 +1252,7 @@ struct ContentView: View {
                  
         return nil
     }
-     
+      
     private func evaluateSequentialExpression(_ expr: String) -> Double? {
         let rawExpr = expr
             .replacingOccurrences(of: "\u{202F}", with: "")
@@ -1258,7 +1298,7 @@ struct ContentView: View {
         }
         return runningResult
     }
-     
+      
     private func applyScientificFunc(_ function: String) {
         guard let val = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
         var res: Double = 0.0
@@ -1302,7 +1342,7 @@ struct ContentView: View {
         hasEvaluatedResult = true
         isTypingNewNumber = true
     }
-     
+      
     private func factorial(_ n: Int) -> Double {
         guard n >= 0 else { return 0 }
         if n == 0 || n == 1 { return 1 }
@@ -1310,7 +1350,7 @@ struct ContentView: View {
         for i in 2...min(n, 170) { fact *= Double(i) }
         return fact
     }
-     
+      
     private func memoryClear() { memoryValue = 0.0; hasMemory = false }
     private func memoryRecall() { displayValue = formatResult(memoryValue); isTypingNewNumber = true }
     private func memoryAdd() {
@@ -1323,7 +1363,7 @@ struct ContentView: View {
             memoryValue -= val; hasMemory = true; isTypingNewNumber = true
         }
     }
-     
+      
     private func formatResult(_ val: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -1335,7 +1375,7 @@ struct ContentView: View {
          
         return formatter.string(from: NSNumber(value: val)) ?? "\(val)"
     }
-     
+      
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }

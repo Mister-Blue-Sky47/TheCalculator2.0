@@ -1,10 +1,18 @@
+//
+//  PowerSupplyCalculator.swift
+//  TheCalculator2.0
+//
+//  Created by Steffen Beier on 16.11.26.
+//
+
 import Foundation
 
 struct PCComponent: Identifiable, Hashable {
     let id = UUID()
-    let name: String
+    var name: String
     let category: ComponentCategory
-    let typicalWattage: Double
+    var typicalWattage: Double
+    var isCustom: Bool = false
 }
 
 enum ComponentCategory: String, CaseIterable, Identifiable {
@@ -18,7 +26,6 @@ enum ComponentCategory: String, CaseIterable, Identifiable {
 }
 
 struct PowerSupplyCalculator {
-    // Vordefinierte Standard-Komponenten mit typischer Leistungsaufnahme (Watt)
     static let presetComponents: [PCComponent] = [
         // CPUs
         PCComponent(name: "Intel Core i3 / AMD Ryzen 3 (Entry)", category: .cpu, typicalWattage: 65),
@@ -47,13 +54,10 @@ struct PowerSupplyCalculator {
         PCComponent(name: "AIO Wasserkühlung (240/360mm) + 6 RGB Lüfter", category: .peripherals, typicalWattage: 50)
     ]
     
-    // Berechnet den Gesamtbedarf und empfiehlt ein Netzteil mit Puffer (z.B. 20-30% Headroom + Lastspitzen)
     static func calculateTotalWattage(selectedComponents: [PCComponent]) -> (sumWatt: Double, recommendedPSU: Int) {
         let total = selectedComponents.reduce(0) { $0 + $1.typicalWattage }
-        // Empfehlung: Ca. 30% Puffer für Alterung, Effizienz und Lastspitzen (Transient Power Spikes), aufgerundet auf 50W-Schritte
         let withHeadroom = total * 1.30
         let roundedPSU = Int(ceil(withHeadroom / 50.0) * 50.0)
-        // Sinnvolles Minimum von 350W
         let finalPSU = max(roundedPSU, 350)
         return (total, finalPSU)
     }

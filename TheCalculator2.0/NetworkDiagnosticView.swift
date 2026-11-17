@@ -1,3 +1,10 @@
+//
+//  NetworkDiagnosticView.swift
+//  TheCalculator2.0
+//
+//  Created by Steffen Beier on 17.11.26.
+//
+
 import SwiftUI
 
 struct NetworkDiagnosticView: View {

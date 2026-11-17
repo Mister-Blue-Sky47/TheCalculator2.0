@@ -1,4 +1,13 @@
+//
+//  SubnetView.swift
+//  TheCalculator2.0
+//
+//  Created by Steffen Beier on 16.11.26.
+//
+
 import SwiftUI
+import VisionKit
+import Vision
 
 struct SubnetView: View {
     @State private var selectedTab: Int = 0
@@ -6,6 +15,7 @@ struct SubnetView: View {
     // Standard Subnet-Rechner States
     @State private var ipInput: String = "192.168.1.0"
     @State private var cidrInput: Int = 24
+    @State private var showScanner: Bool = false
     
     // VLSM-Rechner States
     @State private var vlsmBaseIP: String = "192.168.10.0"
@@ -24,7 +34,6 @@ struct SubnetView: View {
     }
     
     var vlsmResults: [SubnetResult] {
-        // Reinige den IP-String von eventuellen Leerzeichen
         let cleanIP = vlsmBaseIP.trimmingCharacters(in: .whitespacesAndNewlines)
         return SubnetCalculator.calculateVLSM(baseIP: cleanIP, baseCIDR: vlsmBaseCIDR, requirements: requirements)
     }
@@ -46,6 +55,15 @@ struct SubnetView: View {
                 vlsmPlannerView
             }
         }
+        .sheet(isPresented: $showScanner) {
+            IPDocumentScannerView { scannedText in
+                // Versuche eine IP-Adresse aus dem erkannten Text zu fischen
+                let extractedIP = extractIPAddress(from: scannedText)
+                if !extractedIP.isEmpty {
+                    ipInput = extractedIP
+                }
+            }
+        }
     }
     
     // MARK: - Standard Subnetz Ansicht
@@ -53,8 +71,21 @@ struct SubnetView: View {
         ScrollView {
             VStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("IPv4 Subnetz-Berechnung")
-                        .font(.headline)
+                    HStack {
+                        Text("IPv4 Subnetz-Berechnung")
+                            .font(.headline)
+                        Spacer()
+                        Button(action: { showScanner = true }) {
+                            Label("IP Scannen", systemImage: "camera.viewfinder")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.blue.opacity(0.15))
+                                .foregroundColor(.blue)
+                                .cornerRadius(6)
+                        }
+                    }
                     
                     HStack {
                         TextField("IP-Adresse", text: $ipInput)
@@ -98,7 +129,6 @@ struct SubnetView: View {
     private var vlsmPlannerView: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // Basis-IP und Subnetz-Auswahl
                 VStack(alignment: .leading, spacing: 8) {
                     Text("VLSM Basis-Netzwerk")
                         .font(.headline)
@@ -120,7 +150,6 @@ struct SubnetView: View {
                 .background(Color(UIColor.secondarySystemBackground))
                 .cornerRadius(12)
                 
-                // Neues Netz hinzufügen
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Neues Subnetz anfordern")
                         .font(.subheadline)
@@ -146,7 +175,6 @@ struct SubnetView: View {
                 .background(Color(UIColor.secondarySystemBackground))
                 .cornerRadius(12)
                 
-                // Generierte VLSM Tabelle
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("Erzeugte VLSM-Aufteilung")
@@ -208,6 +236,77 @@ struct SubnetView: View {
         requirements.append((name: newSubnetName, hosts: hosts))
         newSubnetName = ""
         newSubnetHosts = ""
+    }
+    
+    private func extractIPAddress(from text: String) -> String {
+        let pattern = #"\b(?:\d{1,3}\.){3}\d{1,3}\b"#
+        if let range = text.range(of: pattern, options: .regularExpression) {
+            return String(text[range])
+        }
+        return ""
+    }
+}
+
+// Hilfs-Controller für Live-Dokumenten-Scannen / OCR via VisionKit
+struct IPDocumentScannerView: UIViewControllerRepresentable {
+    var completion: (String) -> Void
+    @Environment(\.presentationMode) var presentationMode
+    
+    func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
+        let scannerViewController = VNDocumentCameraViewController()
+        scannerViewController.delegate = context.coordinator
+        return scannerViewController
+    }
+    
+    func updateUIViewController(_ uiViewController: VNDocumentCameraViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, VNDocumentCameraViewControllerDelegate {
+        var parent: IPDocumentScannerView
+        
+        init(_ parent: IPDocumentScannerView) {
+            self.parent = parent
+        }
+        
+        func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
+            var fullText = ""
+            let recognizer = VNRecognizeTextRequest { request, _ in
+                guard let observations = request.results as? [VNRecognizedTextObservation] else { return }
+                for observation in observations {
+                    if let bestCandidate = observation.topCandidates(1).first {
+                        fullText += bestCandidate.string + "\n"
+                    }
+                }
+                DispatchQueue.main.async {
+                    self.parent.completion(fullText)
+                    self.parent.presentationMode.wrappedValue.dismiss()
+                }
+            }
+            
+            recognizer.recognitionLevel = .accurate
+            
+            let queue = DispatchQueue(label: "com.calculatormaki.ocr")
+            queue.async {
+                for i in 0..<scan.pageCount {
+                    let image = scan.imageOfPage(at: i)
+                    if let cgImage = image.cgImage {
+                        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+                        try? handler.perform([recognizer])
+                    }
+                }
+            }
+        }
+        
+        func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
+            parent.presentationMode.wrappedValue.dismiss()
+        }
+        
+        func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFailWithError error: Error) {
+            parent.presentationMode.wrappedValue.dismiss()
+        }
     }
 }
 

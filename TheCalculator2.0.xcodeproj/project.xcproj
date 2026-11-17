@@ -11,6 +11,7 @@
     ],
   },
   "files": [
+    { "path": "VolleyballView.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
     { "path": "BaseCalculator.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
     { "path": "PowerSupplyCalculator.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
     { "path": "PowerSupplyView.swift", "target-membership": [ "TheCalculator2.0/compile-sources" ] },
