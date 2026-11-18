@@ -214,3 +214,14 @@
 ## 3. Ausblick & Nächste Schritte
 - Vollständige Implementierung des OUI-Hersteller-Wörterbuchs für die MAC-Analyse.
 - Verfeinerung des Dark-Mode-Verhaltens und systemunabhängiger Theme-Optionen.
+Hier fehlt lerider einiges dazwischen...
+## Meilenstein: Bugfixes & UI-Polishing (Stand: November 2026)
+
+### 1. Subnetz-Modul (`SubnetView.swift` & OCR)
+* **Kamerazugriff & Berechtigungen:** Behebung des Absturzes (`abort_with_payload`) beim Starten des Dokumentenscanners durch das Hinzufügen des Schlüssels `NSCameraUsageDescription` (`Privacy - Camera Usage Description`) in der `Info.plist`.
+* **VisionKit Stabilisierung:** Refactoring des `IPDocumentScannerView`-Coordinators. Jede gescannte Seite instanziiert nun eine frische `VNRecognizeTextRequest` auf einer dedizierten Hintergrund-Queue (`qos: .userInitiated`), um Zustands- und Thread-Konflikte zu verhindern.
+* **UI-Optimierungen:** Der „IP Scannen“-Button wurde optisch aufgewertet und im Host-Bereich wurden unsaubere Zeilenumbrüche durch konsistente Gedankenstriche (`–`) ersetzt.
+
+### 2. Einheiten-Konverter (`UnitConverterView.swift`)
+* **Layout-Restrukturierung:** Umstellung der „Von“- und „Nach“-Einheiten von einer fehleranfälligen horizontalen Darstellung auf eine vertikale Anordnung mit dedizierten System-Karten (`secondarySystemBackground`). Dadurch gehören Textüberlagerungen bei langen Einheitenbezeichnungen (z. B. „Milligramm“) der Vergangenheit an.
+* **Steuerung & Bedienbarkeit:** Ein zentrierter Tausch-Button sowie skalierbare Ergebnis-Labels (`.minimumScaleFactor`, `.lineLimit(1)`) sorgen für eine stabile Darstellung auf allen iPhone-Modellen (u. a. iPhone 17e).

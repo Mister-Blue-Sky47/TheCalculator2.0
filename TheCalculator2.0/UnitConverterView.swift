@@ -1,3 +1,10 @@
+//
+//  UnitConverterView.swift
+//  TheCalculator2.0
+//
+//  Created by Steffen Beier on 16.11.26.
+//
+
 import SwiftUI
 
 struct UnitConverterView: View {
@@ -31,10 +38,10 @@ struct UnitConverterView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            VStack(spacing: 16) {
                 
                 // 1. Kategorie-Auswahl
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Kategorie auswählen:")
                         .font(.caption)
                         .fontWeight(.bold)
@@ -46,33 +53,30 @@ struct UnitConverterView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                    .background(Color(UIColor.tertiarySystemBackground))
-                    .cornerRadius(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: selectedCategory) { _ in
                         isInputFocused = false
                         resetUnitsForCategory()
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding()
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(12)
                 
-                // Extra-Button für Währungskurse aktualisieren, falls Währungen aktiv sind
+                // Extra-Button für Währungskurse aktualisieren
                 if selectedCategory == .currency {
                     HStack {
                         Button(action: fetchLiveExchangeRates) {
-                            HStack {
+                            HStack(spacing: 6) {
                                 Image(systemName: "arrow.clockwise.circle.fill")
                                 Text(isUpdatingRates ? "Lade Kurse..." : "Tagesaktuelle Kurse laden")
                             }
                             .font(.caption)
                             .fontWeight(.semibold)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.blue.opacity(0.15))
-                            .foregroundColor(.blue)
-                            .cornerRadius(8)
                         }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue.opacity(0.15))
+                        .foregroundColor(.blue)
                         .disabled(isUpdatingRates)
                         
                         if let msg = updateMessage {
@@ -82,11 +86,10 @@ struct UnitConverterView: View {
                         }
                         Spacer()
                     }
-                    .padding(.horizontal, 12)
                 }
                 
                 // 2. Wert-Eingabe
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Wert eingeben:")
                         .font(.caption)
                         .fontWeight(.bold)
@@ -96,14 +99,20 @@ struct UnitConverterView: View {
                         .keyboardType(.decimalPad)
                         .focused($isInputFocused)
                         .font(.system(size: 20, weight: .bold, design: .monospaced))
-                        .padding(8)
-                        .background(Color(UIColor.tertiarySystemBackground))
-                        .cornerRadius(8)
+                        .textFieldStyle(.roundedBorder)
                 }
-                .padding(.horizontal, 12)
+                .padding()
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(12)
                 
-                // 3. Von / Nach Umrechnungs-Picker
-                HStack(spacing: 8) {
+                // 3. Von / Nach Einheiten (Vertikal gestapelt gegen Überlagerungen)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Einheiten")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.secondary)
+                    
+                    // Von-Einheit
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Von:")
                             .font(.caption2)
@@ -116,24 +125,31 @@ struct UnitConverterView: View {
                             }
                         }
                         .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
-                        .background(Color(UIColor.tertiarySystemBackground))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 10)
+                        .background(Color(UIColor.systemBackground))
                         .cornerRadius(8)
                     }
                     
-                    Button(action: {
-                        let temp = sourceUnit
-                        sourceUnit = targetUnit
-                        targetUnit = temp
-                    }) {
-                        Image(systemName: "arrow.left.arrow.right")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.orange)
-                            .padding(.top, 14)
+                    // Tauschen-Button mittig platziert
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            let temp = sourceUnit
+                            sourceUnit = targetUnit
+                            targetUnit = temp
+                        }) {
+                            Label("Einheiten tauschen", systemImage: "arrow.up.arrow.down.circle.fill")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.orange)
+                        Spacer()
                     }
                     
+                    // Nach-Einheit
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Nach:")
                             .font(.caption2)
@@ -146,17 +162,19 @@ struct UnitConverterView: View {
                             }
                         }
                         .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
-                        .background(Color(UIColor.tertiarySystemBackground))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 10)
+                        .background(Color(UIColor.systemBackground))
                         .cornerRadius(8)
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding()
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(12)
                 
                 // 4. Ergebnis-Box
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Ergebnis:")
                         .font(.caption)
                         .fontWeight(.bold)
@@ -175,15 +193,19 @@ struct UnitConverterView: View {
                             .font(.subheadline)
                             .bold()
                             .foregroundColor(.primary)
+                            .lineLimit(1)
                     }
-                    .padding(10)
-                    .background(Color(UIColor.secondarySystemBackground))
-                    .cornerRadius(10)
+                    .padding(12)
+                    .background(Color(UIColor.systemBackground))
+                    .cornerRadius(8)
                 }
-                .padding(.horizontal, 12)
+                .padding()
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(12)
                 
                 Spacer(minLength: 0)
             }
+            .padding(.horizontal)
             .padding(.top, 4)
         }
         .toolbar {
@@ -230,7 +252,6 @@ struct UnitConverterView: View {
         case .storage:
             return ["Bit (bit)", "Byte (B)", "Kilobyte (KB)", "Megabyte (MB)", "Gigabyte (GB)", "Terabyte (TB)", "Petabyte (PB)", "Kibibyte (KiB)", "Mebibyte (MiB)", "Gibibyte (GiB)", "Tebibyte (TiB)"]
         case .currency:
-            // Erweitert um CNY (Chinesischer Yuan) und JPY (Japanischer Yen)
             return [
                 "EUR (€)",
                 "USD ($)",
@@ -252,7 +273,6 @@ struct UnitConverterView: View {
             isUpdatingRates = false
             if success {
                 updateMessage = "Aktualisiert!"
-                // Trigger re-render by touching state
                 inputValue = String(inputValue)
             } else {
                 updateMessage = "Fehler (Offline)"

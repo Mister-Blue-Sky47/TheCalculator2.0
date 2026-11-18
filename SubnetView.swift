@@ -57,7 +57,6 @@ struct SubnetView: View {
         }
         .sheet(isPresented: $showScanner) {
             IPDocumentScannerView { scannedText in
-                // Versuche eine IP-Adresse aus dem erkannten Text zu fischen
                 let extractedIP = extractIPAddress(from: scannedText)
                 if !extractedIP.isEmpty {
                     ipInput = extractedIP
@@ -79,14 +78,12 @@ struct SubnetView: View {
                             Label("IP Scannen", systemImage: "camera.viewfinder")
                                 .font(.caption)
                                 .fontWeight(.bold)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.blue.opacity(0.15))
-                                .foregroundColor(.blue)
-                                .cornerRadius(6)
                         }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue.opacity(0.15))
+                        .foregroundColor(.blue)
                     }
-                    
+                     
                     HStack {
                         TextField("IP-Adresse", text: $ipInput)
                             .keyboardType(.numbersAndPunctuation)
@@ -103,14 +100,14 @@ struct SubnetView: View {
                 .padding()
                 .background(Color(UIColor.secondarySystemBackground))
                 .cornerRadius(12)
-                
+                 
                 if let res = computedResult {
                     VStack(spacing: 10) {
                         ResultRow(label: "Netz-ID:", value: "\(res.networkAddress)/\(res.cidr)")
                         ResultRow(label: "Subnetzmaske:", value: res.netmask)
                         ResultRow(label: "Wildcard-Maske:", value: res.wildcard)
                         ResultRow(label: "Broadcast:", value: res.broadcastAddress)
-                        ResultRow(label: "Host-Bereich:", value: "\(res.firstHost) - \(res.lastHost)")
+                        ResultRow(label: "Host-Bereich:", value: "\(res.firstHost) – \(res.lastHost)")
                         ResultRow(label: "Nutzbare Hosts:", value: "\(res.usableHosts)")
                     }
                     .padding()
@@ -149,7 +146,7 @@ struct SubnetView: View {
                 .padding()
                 .background(Color(UIColor.secondarySystemBackground))
                 .cornerRadius(12)
-                
+                 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Neues Subnetz anfordern")
                         .font(.subheadline)
@@ -169,12 +166,13 @@ struct SubnetView: View {
                                 .font(.title2)
                                 .foregroundColor(.blue)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding()
                 .background(Color(UIColor.secondarySystemBackground))
                 .cornerRadius(12)
-                
+                 
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("Erzeugte VLSM-Aufteilung")
@@ -207,7 +205,7 @@ struct SubnetView: View {
                                 }
                                 
                                 HStack {
-                                    Text("Bereich: \(res.firstHost) - \(res.lastHost)")
+                                    Text("Bereich: \(res.firstHost) – \(res.lastHost)")
                                         .font(.caption)
                                         .monospaced()
                                         .foregroundColor(.gray)
@@ -273,29 +271,32 @@ struct IPDocumentScannerView: UIViewControllerRepresentable {
         
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
             var fullText = ""
-            let recognizer = VNRecognizeTextRequest { request, _ in
-                guard let observations = request.results as? [VNRecognizedTextObservation] else { return }
-                for observation in observations {
-                    if let bestCandidate = observation.topCandidates(1).first {
-                        fullText += bestCandidate.string + "\n"
-                    }
-                }
-                DispatchQueue.main.async {
-                    self.parent.completion(fullText)
-                    self.parent.presentationMode.wrappedValue.dismiss()
-                }
-            }
+            let queue = DispatchQueue(label: "com.calculatormaki.ocr", qos: .userInitiated)
             
-            recognizer.recognitionLevel = .accurate
-            
-            let queue = DispatchQueue(label: "com.calculatormaki.ocr")
             queue.async {
                 for i in 0..<scan.pageCount {
                     let image = scan.imageOfPage(at: i)
                     if let cgImage = image.cgImage {
-                        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-                        try? handler.perform([recognizer])
+                        let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+                        
+                        // Jede Seite bekommt nun eine frische Request-Instanz, um den Crash zu verhindern
+                        let request = VNRecognizeTextRequest { request, _ in
+                            guard let observations = request.results as? [VNRecognizedTextObservation] else { return }
+                            for observation in observations {
+                                if let bestCandidate = observation.topCandidates(1).first {
+                                    fullText += bestCandidate.string + "\n"
+                                }
+                            }
+                        }
+                        request.recognitionLevel = .accurate
+                        
+                        try? requestHandler.perform([request])
                     }
+                }
+                
+                DispatchQueue.main.async {
+                    self.parent.completion(fullText)
+                    self.parent.presentationMode.wrappedValue.dismiss()
                 }
             }
         }

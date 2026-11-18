@@ -19,7 +19,7 @@ enum CalculatorMode: String, CaseIterable, Identifiable {
     case psu = "NETZTEIL (PC)"
     case volleyball = "Volleyball"
     case sokoban = "Sokoban Mini-Game"
-    case constants = "KONSTANTEN"
+    case itOverlays = "IT-Overlays"
 
     var id: String { self.rawValue }
 }
@@ -49,17 +49,15 @@ enum AppTheme: String, CaseIterable, Identifiable {
         }
     }
     
-    // Dynamischer Hintergrund passend zum gewählten Theme
     var backgroundColor: Color {
         switch self {
         case .proDark: return .black
-        case .cyberPurple: return Color(hex: 0x0D0221) // Sehr dunkles Cyber-Lila/Schwarz
+        case .cyberPurple: return Color(hex: 0x0D0221)
         case .classicApple: return Color(UIColor.systemGroupedBackground)
         case .matrixGreen: return .black
         }
     }
     
-    // Hintergrund für das Display / Header-Bereiche
     var displayBackgroundColor: Color {
         switch self {
         case .proDark: return Color(hex: 0x111111)
@@ -121,6 +119,7 @@ struct HistoryItem: Identifiable {
 
 struct PhysicsConstant: Identifiable {
     let id = UUID()
+    let category: String
     let name: String
     let symbol: String
     let value: Double
@@ -129,9 +128,10 @@ struct PhysicsConstant: Identifiable {
 
 struct ContentView: View {
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.verticalSizeClass) var verticalSizeClass
     @State private var selectedMode: CalculatorMode = .basic
     @AppStorage("selectedAppTheme") private var currentTheme: AppTheme = .proDark
-    
+
     @State private var displayValue: String = "0"
     @State private var formulaDisplay: String = ""
     @State private var formulaExpression: String = ""
@@ -146,18 +146,15 @@ struct ContentView: View {
     
     @State private var reverseInputChar: String = "A"
     
-    // Sheets & Export
     @State private var history: [HistoryItem] = []
     @State private var showHistorySheet: Bool = false
     @State private var showSettingsSheet: Bool = false
     @State private var showConstantsSheet: Bool = false
-    @State private var showITOverlays: Bool = false
     
     @State private var selectedExportFormat: ExportFormat = .txt
     @State private var showExportAlert: Bool = false
     @State private var exportedString: String = ""
     
-    // Dice State
     @State private var selectedDiceSides: Int = 6
     
     @State private var showNerdFact: Bool = false
@@ -169,7 +166,7 @@ struct ContentView: View {
         "Es gibt 10 Arten von Menschen: Die, die Binär verstehen, und die, die es nicht tun.",
         "Layer-8-Problem erkannt: Der Fehler sitzt meist ca. 40 cm vor dem Monitor.",
         "Kein Backup, kein Mitleid! (3-2-1-Regel: 3 Kopien, 2 Medien, 1 Offsite.)",
-        "DNS ist immer schuld. Selbst wenn es nicht DNS ist – es war trotzdem DNS.",
+        "DNS is immer schuld. Selbst wenn es nicht DNS ist – es war trotzdem DNS.",
         "Ein UDP-Witz: Ich würde dir ja einen erzählen, aber ich weiß nicht, ob er ankommt.",
         "Ein TCP-Witz: Hallo, möchtest du einen TCP-Witz hören? – Ja, ich möchte einen TCP-Witz hören. – Okay, hier ist der TCP-Witz.",
         "127.0.0.1 – Nirgendwo ist es schöner als zu Hause (::1 für IPv6-Profis).",
@@ -177,123 +174,79 @@ struct ContentView: View {
         "Wer misst, misst Mist – vor allem ohne Bezugspotenzial auf der falschen Messspitze.",
         "404: Kaffeepause nicht gefunden. Bitte Administrator neu starten.",
         "Freitag nach eins macht jeder seins – aber bitte vorher kein Produktiv-Update deployen!",
-        "IPv6 hat 3,4 × 10³⁸ Adressen. Das reicht für ca. 42 IP-Adressen pro Sandkorn auf der Erde.",
+        "IPv6 has 3,4 × 10³⁸ Adressen. Das reicht für ca. 42 IP-Adressen pro Sandkorn auf der Erde.",
         "Widerstand ist zwecklos – zumindest wenn R gegen 0 Ω geht (Kurzschluss!).",
         "Ein Byte sind 8 Bit. Ein Nibble sind 4 Bit. Und ein Häppchen Pause hat sich jeder verdient.",
         "RJ45-Crimp-Regel Nr. 1: Erst die Knickschutztülle aufs Kabel schieben, DANN den Stecker crimpen!",
         "USV-Weisheit: Ein Stromausfall kommt immer exakt 3 Sekunden bevor man auf Speichern drückt.",
-        "ASCII 42 ist das Sternchen '*' – in Regex der Platzhalter für alles, in C der Zeiger auf die Wahrheit.",
+        "ASCII 42 ist das Sternchen '*' – in Regex der Quantifizierer, in C der Zeiger.",
         "Spannungsfall über 3 %? Entweder Kupferquerschnitt erhöhen oder das Rack näher ans Kraftwerk schieben!"
     ]
     
     let physicsConstants: [PhysicsConstant] = [
-        PhysicsConstant(name: "Lichtgeschwindigkeit", symbol: "c", value: 299792458, unit: "m/s"),
-        PhysicsConstant(name: "Gravitationskonstante", symbol: "G", value: 6.67430e-11, unit: "m³/(kg·s²)"),
-        PhysicsConstant(name: "Planck-Wirkungsquantum", symbol: "h", value: 6.62607015e-34, unit: "J·s"),
-        PhysicsConstant(name: "Elementarladung", symbol: "e", value: 1.602176634e-19, unit: "C"),
-        PhysicsConstant(name: "Avogadro-Konstante", symbol: "N_A", value: 6.02214076e23, unit: "mol⁻¹"),
-        PhysicsConstant(name: "Boltzmann-Konstante", symbol: "k_B", value: 1.380649e-23, unit: "J/K"),
-        PhysicsConstant(name: "Euler'sche Zahl", symbol: "e", value: Double(M_E), unit: "Zahl"),
-        PhysicsConstant(name: "Kreiszahl", symbol: "π", value: Double.pi, unit: "Zahl")
+        // Fundamental
+        PhysicsConstant(category: "Fundamentalkonstanten", name: "Lichtgeschwindigkeit", symbol: "c", value: 299792458, unit: "m/s"),
+        PhysicsConstant(category: "Fundamentalkonstanten", name: "Gravitationskonstante", symbol: "G", value: 6.67430e-11, unit: "m³/(kg·s²)"),
+        PhysicsConstant(category: "Fundamentalkonstanten", name: "Planck-Wirkungsquantum", symbol: "h", value: 6.62607015e-34, unit: "J·s"),
+        PhysicsConstant(category: "Fundamentalkonstanten", name: "Elementarladung", symbol: "e", value: 1.602176634e-19, unit: "C"),
+        PhysicsConstant(category: "Fundamentalkonstanten", name: "Elektrische Feldkonstante", symbol: "ε₀", value: 8.854187817e-12, unit: "F/m"),
+        PhysicsConstant(category: "Fundamentalkonstanten", name: "Magnetische Feldkonstante", symbol: "μ₀", value: 1.25663706212e-6, unit: "N/A²"),
+        PhysicsConstant(category: "Fundamentalkonstanten", name: "Avogadro-Konstante", symbol: "N_A", value: 6.02214076e23, unit: "mol⁻¹"),
+        PhysicsConstant(category: "Fundamentalkonstanten", name: "Boltzmann-Konstante", symbol: "k_B", value: 1.380649e-23, unit: "J/K"),
+        PhysicsConstant(category: "Fundamentalkonstanten", name: "Goldener Schnitt", symbol: "φ", value: 1.61803398875, unit: "Zahl"),
+        PhysicsConstant(category: "Fundamentalkonstanten", name: "Euler'sche Zahl", symbol: "e", value: Double(M_E), unit: "Zahl"),
+        PhysicsConstant(category: "Fundamentalkonstanten", name: "Kreiszahl", symbol: "π", value: Double.pi, unit: "Zahl"),
+        
+        // Astronomie & Planeten
+        PhysicsConstant(category: "Astronomische Daten & Planeten", name: "Erdmasse", symbol: "M_E", value: 5.9722e24, unit: "kg"),
+        PhysicsConstant(category: "Astronomische Daten & Planeten", name: "Erdradius (mittler)", symbol: "R_E", value: 6371000, unit: "m"),
+        PhysicsConstant(category: "Astronomische Daten & Planeten", name: "Mondmasse", symbol: "M_M", value: 7.342e22, unit: "kg"),
+        PhysicsConstant(category: "Astronomische Daten & Planeten", name: "Mondradius (mittler)", symbol: "R_M", value: 1737400, unit: "m")
     ]
 
     var body: some View {
         ZStack {
-            // Dynamischer Hintergrund passend zum gewählten Theme
             currentTheme.backgroundColor
                 .ignoresSafeArea()
             
-            VStack(spacing: 4) {
-                headerControls
-                    .padding(.horizontal, 6)
-                    .padding(.top, 2)
-                 
-                VStack(alignment: .trailing, spacing: 3) {
-                    HStack {
-                        Text("SYS: READY")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundColor(.green)
-                        Spacer()
-                        Text("MODE: \(selectedMode.rawValue)")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundColor(.secondary)
-                        if selectedMode == .scientific {
-                            Button(action: {
-                                switch currentAngleMode {
-                                case .deg: currentAngleMode = .rad
-                                case .rad: currentAngleMode = .gon
-                                case .gon: currentAngleMode = .deg
-                                }
-                            }) {
-                                Text("• \(currentAngleMode.rawValue)")
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.orange)
-                            }
-                            .buttonStyle(.plain)
+            if verticalSizeClass == .compact {
+                // --- QUERFORMAT-LAYOUT ---
+                HStack(spacing: 8) {
+                    VStack(spacing: 6) {
+                        headerControls
+                        
+                        if [.basic, .scientific, .hexBin].contains(selectedMode) {
+                            displaySection(isCompact: true)
                         }
+                        Spacer(minLength: 0)
                     }
-                     
-                    Text(formulaDisplay.isEmpty ? " " : formulaDisplay)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.gray)
-                        .lineLimit(1)
-                     
-                    HStack {
-                        if hasMemory {
-                            Text("MEM: \(formatResult(memoryValue))")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(.orange)
-                        }
-                        Spacer()
-                        if displayValue == "42" || displayValue == "42,0" || displayValue == "42.0" {
-                            Text("(Ultimate Answer)")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.purple)
-                        }
+                    .frame(maxWidth: [.basic, .scientific, .hexBin].contains(selectedMode) ? 260 : .infinity)
+                    
+                    if [.basic, .scientific, .hexBin].contains(selectedMode) {
+                        activeModeContent
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        activeModeContent
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                     
-                    Text(displayValue)
-                        .font(.system(size: 32, weight: .bold, design: .monospaced))
-                        .minimumScaleFactor(0.35)
-                        .lineLimit(1)
-                        .foregroundColor(currentTheme == .matrixGreen ? .green : .primary)
                 }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(currentTheme.displayBackgroundColor) // Dynamischer Display-Hintergrund
-                .cornerRadius(10)
                 .padding(.horizontal, 8)
-                 
-                Group {
-                    switch selectedMode {
-                    case .basic:
-                        basicCalculatorGrid
-                    case .scientific:
-                        scientificCalculatorGrid
-                    case .units:
-                        UnitConverterView().dismissKeyboardOnTap()
-                    case .subnet:
-                        SubnetView().dismissKeyboardOnTap()
-                    case .ipv6:
-                        IPv6View().dismissKeyboardOnTap()
-                    case .diag:
-                        NetworkDiagnosticView().dismissKeyboardOnTap()
-                    case .elektro:
-                        ElektroView().dismissKeyboardOnTap()
-                    case .hexBin:
-                        hexBinView.dismissKeyboardOnTap()
-                    case .psu:
-                        PowerSupplyView().dismissKeyboardOnTap()
-                    case .volleyball:
-                        VolleyballView()
-                    case .sokoban:
-                        SokobanView()
-                    case .constants:
-                        ScientificView().dismissKeyboardOnTap()
+                .padding(.vertical, 4)
+            } else {
+                // --- HOCHFORMAT-LAYOUT ---
+                VStack(spacing: 4) {
+                    headerControls
+                        .padding(.horizontal, 6)
+                        .padding(.top, 2)
+                    
+                    if [.basic, .scientific, .hexBin].contains(selectedMode) {
+                        displaySection(isCompact: false)
+                            .padding(.horizontal, 8)
                     }
+                    
+                    activeModeContent
+                        .frame(maxHeight: .infinity)
                 }
-                .frame(maxHeight: .infinity)
             }
         }
         .preferredColorScheme(currentTheme == .classicApple ? .light : .dark)
@@ -309,11 +262,98 @@ struct ContentView: View {
         .sheet(isPresented: $showConstantsSheet) {
             constantsSheetView
         }
-        .sheet(isPresented: $showITOverlays) {
+    }
+    
+    @ViewBuilder
+    private func displaySection(isCompact: Bool) -> some View {
+        VStack(alignment: .trailing, spacing: isCompact ? 2 : 3) {
+            HStack {
+                Text("SYS: READY")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(.green)
+                Spacer()
+                Text("MODE: \(selectedMode.rawValue)")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(.secondary)
+                if selectedMode == .scientific {
+                    Button(action: {
+                        switch currentAngleMode {
+                        case .deg: currentAngleMode = .rad
+                        case .rad: currentAngleMode = .gon
+                        case .gon: currentAngleMode = .deg
+                        }
+                    }) {
+                        Text("• \(currentAngleMode.rawValue)")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(.orange)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            
+            Text(formulaDisplay.isEmpty ? " " : formulaDisplay)
+                .font(.system(size: isCompact ? 16 : 22, weight: .semibold, design: .monospaced))
+                .foregroundColor(.gray)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            
+            HStack {
+                if hasMemory {
+                    Text("MEM: \(formatResult(memoryValue))")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(.orange)
+                }
+                Spacer()
+                if displayValue == "42" || displayValue == "42,0" || displayValue == "42.0" {
+                    Text("(Ultimate Answer)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.purple)
+                }
+            }
+            
+            Text(displayValue)
+                .font(.system(size: isCompact ? 32 : 42, weight: .bold, design: .monospaced))
+                .minimumScaleFactor(0.35)
+                .lineLimit(1)
+                .foregroundColor(currentTheme == .matrixGreen ? .green : .primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.horizontal, 10)
+        .padding(.vertical, isCompact ? 4 : 6)
+        .background(currentTheme.displayBackgroundColor)
+        .cornerRadius(10)
+    }
+    
+    @ViewBuilder
+    private var activeModeContent: some View {
+        switch selectedMode {
+        case .basic:
+            basicCalculatorGrid
+        case .scientific:
+            scientificCalculatorGrid
+        case .units:
+            UnitConverterView().dismissKeyboardOnTap()
+        case .subnet:
+            SubnetView().dismissKeyboardOnTap()
+        case .ipv6:
+            IPv6View().dismissKeyboardOnTap()
+        case .diag:
+            NetworkDiagnosticView().dismissKeyboardOnTap()
+        case .elektro:
+            ElektroView().dismissKeyboardOnTap()
+        case .hexBin:
+            hexBinView.dismissKeyboardOnTap()
+        case .psu:
+            PowerSupplyView().dismissKeyboardOnTap()
+        case .volleyball:
+            VolleyballView()
+        case .sokoban:
+            SokobanView()
+        case .itOverlays:
             ITOverlaysView()
         }
     }
-      
+    
     private var headerControls: some View {
         VStack(spacing: 6) {
             HStack(spacing: 6) {
@@ -329,9 +369,9 @@ struct ContentView: View {
                 .background(Color(.tertiarySystemBackground).opacity(0.3))
                 .cornerRadius(8)
                 .fixedSize(horizontal: true, vertical: false)
-                 
+                
                 Spacer(minLength: 4)
-                 
+                
                 Button(action: { showHistorySheet = true }) {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.system(size: 13, weight: .bold))
@@ -341,7 +381,7 @@ struct ContentView: View {
                         .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
-                 
+                
                 Button(action: { showSettingsSheet = true }) {
                     Image(systemName: "gearshape.fill")
                         .font(.system(size: 13, weight: .bold))
@@ -351,18 +391,8 @@ struct ContentView: View {
                         .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
-                 
-                Button(action: { showITOverlays = true }) {
-                    Image(systemName: "rectangle.stack.badge.plus")
-                        .font(.system(size: 13, weight: .bold))
-                        .padding(8)
-                        .background(Color(.tertiarySystemBackground).opacity(0.3))
-                        .foregroundColor(currentTheme == .matrixGreen ? .green : .blue)
-                        .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
             }
-             
+            
             if selectedMode == .basic || selectedMode == .scientific {
                 HStack(spacing: 8) {
                     Toggle(isOn: $useOrderOfOperations) {
@@ -371,7 +401,7 @@ struct ContentView: View {
                     }
                     .toggleStyle(.button)
                     .tint(currentTheme.operatorButtonColor)
-                     
+                    
                     if selectedMode == .scientific {
                         Button(action: {
                             switch currentAngleMode {
@@ -394,26 +424,16 @@ struct ContentView: View {
 
     private var constantsSheetView: some View {
         NavigationView {
-            List(physicsConstants) { item in
-                Button(action: {
-                    let valStr = String(item.value)
-                    appendDigit(valStr)
-                    showConstantsSheet = false
-                }) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.name)
-                                .font(.body)
-                                .fontWeight(.bold)
-                                .foregroundColor(.primary)
-                            Text("\(item.symbol) = \(item.value) \(item.unit)")
-                                .font(.caption)
-                                .fontDesign(.monospaced)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.blue)
+            List {
+                Section(header: Text("Fundamentalkonstanten")) {
+                    ForEach(physicsConstants.filter { $0.category == "Fundamentalkonstanten" }) { item in
+                        constantRow(item)
+                    }
+                }
+                
+                Section(header: Text("Astronomische Daten & Planeten")) {
+                    ForEach(physicsConstants.filter { $0.category == "Astronomische Daten & Planeten" }) { item in
+                        constantRow(item)
                     }
                 }
             }
@@ -426,7 +446,31 @@ struct ContentView: View {
             }
         }
     }
-      
+    
+    private func constantRow(_ item: PhysicsConstant) -> some View {
+        Button(action: {
+            let valStr = String(item.value)
+            appendDigit(valStr)
+            showConstantsSheet = false
+        }) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .font(.body)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    Text("\(item.symbol) = \(item.value) \(item.unit)")
+                        .font(.caption)
+                        .fontDesign(.monospaced)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Image(systemName: "plus.circle.fill")
+                    .foregroundColor(.blue)
+            }
+        }
+    }
+    
     private var settingsSheetView: some View {
         NavigationView {
             Form {
@@ -438,7 +482,7 @@ struct ContentView: View {
                     }
                     .pickerStyle(.menu)
                 }
-                 
+                
                 Section(header: Text("Würfel-Einstellungen")) {
                     Picker("Würfel-Typ", selection: $selectedDiceSides) {
                         Text("d6").tag(6)
@@ -449,7 +493,7 @@ struct ContentView: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                 
+                
                 Section(header: Text("Über TheCalculator 2.0")) {
                     HStack {
                         Text("Version")
@@ -474,7 +518,7 @@ struct ContentView: View {
             }
         }
     }
-      
+    
     private var historySheetView: some View {
         NavigationView {
             VStack(spacing: 0) {
@@ -482,7 +526,7 @@ struct ContentView: View {
                     Text("Export-Format:")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.secondary)
-                     
+                    
                     Picker("Format", selection: $selectedExportFormat) {
                         ForEach(ExportFormat.allCases) { format in
                             Text(format.rawValue).tag(format)
@@ -492,7 +536,7 @@ struct ContentView: View {
                 }
                 .padding(10)
                 .background(Color(UIColor.secondarySystemBackground))
-                 
+                
                 List {
                     if history.isEmpty {
                         Text("Noch keine Berechnungen im Verlauf")
@@ -552,7 +596,7 @@ struct ContentView: View {
             }
         }
     }
-      
+    
     private func generateExportData() {
         switch selectedExportFormat {
         case .txt:
@@ -576,7 +620,7 @@ struct ContentView: View {
         }
         UIPasteboard.general.string = exportedString
     }
-      
+    
     private func deleteHistoryItem(at offsets: IndexSet) {
         let reversedIndices = offsets.map { history.count - 1 - $0 }
         for index in reversedIndices {
@@ -585,7 +629,7 @@ struct ContentView: View {
             }
         }
     }
-      
+    
     private var basicCalculatorGrid: some View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
@@ -624,24 +668,24 @@ struct ContentView: View {
                 calcButton("DEL", color: Color(UIColor.systemRed)) { deleteLastChar() }
                 calcButton("+", color: currentTheme.operatorButtonColor) { appendSymbol("+") }
             }
-             
+            
             GeometryReader { geo in
                 HStack(spacing: 4) {
                     calcButton("SWAP", color: .indigo) { swapOperands() }
-                        .frame(width: (geo.size.width - 8) * 0.20)
-                     
+                        .frame(width: max(0, (geo.size.width - 8) * 0.20))
+                    
                     calcButton("42", color: .purple) { trigger42Fact() }
-                        .frame(width: (geo.size.width - 8) * 0.20)
-                     
+                        .frame(width: max(0, (geo.size.width - 8) * 0.20))
+                    
                     calcButton("=", color: currentTheme.operatorButtonColor) { calculateResult() }
-                        .frame(width: (geo.size.width - 8) * 0.60)
+                        .frame(width: max(0, (geo.size.width - 8) * 0.60))
                 }
             }
-            .frame(height: 42)
+            .frame(height: verticalSizeClass == .compact ? 28 : 42)
         }
         .padding(.horizontal, 8)
     }
-      
+    
     private var scientificCalculatorGrid: some View {
         VStack(spacing: 4) {
             VStack(spacing: 3) {
@@ -675,18 +719,20 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal, 8)
-             
+            
             basicCalculatorGrid
         }
     }
-      
+    
     private func squareScientificButton(_ label: String, action: @escaping () -> Void) -> some View {
         Button(action: {
             hideKeyboard()
             action()
         }) {
             Text(label)
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: verticalSizeClass == .compact ? 14 : 18, weight: .bold))
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(UIColor.systemIndigo))
                 .foregroundColor(.white)
@@ -694,7 +740,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-      
+    
     private var hexBinView: some View {
         VStack(spacing: 4) {
             ScrollView {
@@ -714,10 +760,10 @@ struct ContentView: View {
                     .padding(8)
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(8)
-                     
+                    
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Basen, ASCII & Unicode").font(.caption).fontWeight(.bold).foregroundColor(.blue)
-                         
+                        
                         let cleanText = displayValue.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
                         let parsedInt: Int64? = {
                             if let d = Double(cleanText), d <= Double(Int64.max), d >= Double(Int64.min), d.truncatingRemainder(dividingBy: 1) == 0 {
@@ -749,7 +795,7 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(8)
-                     
+                    
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Reverse: Zeichen → Code").font(.caption).fontWeight(.bold).foregroundColor(.blue)
                         HStack(spacing: 8) {
@@ -769,7 +815,7 @@ struct ContentView: View {
                                         }
                                     }
                                 }
-                             
+                            
                             let scalars = Array(reverseInputChar.unicodeScalars)
                             if let scalar = scalars.first {
                                 let code = Int64(scalar.value)
@@ -803,7 +849,7 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 8)
             }
-             
+            
             HStack(spacing: 3) {
                 calcButton("A", color: Color(UIColor.systemPurple)) { appendDigit("A") }
                 calcButton("B", color: Color(UIColor.systemPurple)) { appendDigit("B") }
@@ -814,18 +860,20 @@ struct ContentView: View {
             }
             .frame(height: 32)
             .padding(.horizontal, 8)
-             
+            
             basicCalculatorGrid
         }
     }
-      
+    
     private func calcButton(_ label: String, color: Color = .blue, textColor: Color = .white, action: @escaping () -> Void) -> some View {
         Button(action: {
             hideKeyboard()
             action()
         }) {
             Text(label)
-                .font(.system(size: 16, weight: .bold))
+                .font(.system(size: verticalSizeClass == .compact ? 18 : 25, weight: .bold))
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(color)
                 .foregroundColor(textColor)
@@ -833,7 +881,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-      
+    
     private func generateRandomFloat() {
         let rndVal = Double.random(in: 0.0...1.0)
         let formatted = formatResult(rndVal)
@@ -841,7 +889,7 @@ struct ContentView: View {
         formulaExpression = formatted
         isTypingNewNumber = true
     }
-      
+    
     private func generateDiceRoll() {
         if selectedDiceSides == 0 {
             let letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -857,14 +905,14 @@ struct ContentView: View {
             isTypingNewNumber = true
         }
     }
-      
+    
     private func generateRandomInt100() {
         let roll = Int.random(in: 1...100)
         displayValue = String(roll)
         formulaExpression = String(roll)
         isTypingNewNumber = true
     }
-      
+    
     private func applyReciprocal() {
         guard let val = Double(displayValue.replacingOccurrences(of: ",", with: ".")), val != 0 else {
             displayValue = "Division durch 0"
@@ -878,20 +926,20 @@ struct ContentView: View {
         hasEvaluatedResult = true
         isTypingNewNumber = true
     }
-      
+    
     private func swapOperands() {
         let tokens = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
         if tokens.count == 3 {
             let left = tokens[0]
             let op = tokens[1]
             let right = tokens[2]
-             
+            
             formulaExpression = "\(right) \(op) \(left)"
             formulaDisplay = formulaExpression
             displayValue = right
         }
     }
-      
+    
     private func appendDigit(_ digit: String) {
         if hasEvaluatedResult {
             displayValue = digit
@@ -900,6 +948,12 @@ struct ContentView: View {
             isTypingNewNumber = false
         } else if isTypingNewNumber {
             displayValue = digit
+            if !formulaExpression.isEmpty && !formulaExpression.hasSuffix(" ") {
+                let lastChar = String(formulaExpression.suffix(1))
+                if ["+", "-", "×", "÷", "mod", "^"].contains(lastChar) {
+                    formulaExpression += " "
+                }
+            }
             formulaExpression += digit
             isTypingNewNumber = false
         } else {
@@ -915,24 +969,29 @@ struct ContentView: View {
                 formulaExpression += digit
             }
         }
+        while formulaExpression.contains("  ") {
+            formulaExpression = formulaExpression.replacingOccurrences(of: "  ", with: " ")
+        }
         formulaDisplay = formulaExpression
     }
-      
+    
     private func appendSymbol(_ symbol: String) {
         if hasEvaluatedResult {
             formulaExpression = displayValue + " " + symbol + " "
             hasEvaluatedResult = false
         } else {
-            if formulaExpression.hasSuffix(" ") {
-                formulaExpression = String(formulaExpression.dropLast(2)) + symbol + " "
+            let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty {
+                formulaExpression = trimmed + " " + symbol + " "
             } else {
-                formulaExpression += " " + symbol + " "
+                formulaExpression = displayValue + " " + symbol + " "
             }
         }
+        formulaExpression = formulaExpression.replacingOccurrences(of: "  ", with: " ")
         formulaDisplay = formulaExpression
         isTypingNewNumber = true
     }
-      
+    
     private func appendComma() {
         if hasEvaluatedResult {
             displayValue = "0,"
@@ -949,29 +1008,24 @@ struct ContentView: View {
         }
         formulaDisplay = formulaExpression
     }
-      
+    
     private func deleteLastChar() {
         if !displayValue.isEmpty && displayValue != "0" {
             displayValue.removeLast()
-            if displayValue.isEmpty { displayValue = "0" }
-        }
-         
-        if !formulaExpression.isEmpty {
-            if formulaExpression.hasSuffix(" ") {
-                let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
-                let components = trimmed.components(separatedBy: " ")
-                if components.count > 1 {
-                    formulaExpression = components.dropLast().joined(separator: " ") + " "
-                } else {
-                    formulaExpression = ""
-                }
-            } else {
-                formulaExpression.removeLast()
+            if displayValue.isEmpty {
+                displayValue = "0"
+                isTypingNewNumber = true
             }
         }
+        
+        if !formulaExpression.isEmpty {
+            formulaExpression.removeLast()
+        }
+        
+        formulaExpression = formulaExpression.replacingOccurrences(of: "  ", with: " ")
         formulaDisplay = formulaExpression
     }
-      
+    
     private func clear() {
         displayValue = "0"
         formulaDisplay = ""
@@ -979,20 +1033,20 @@ struct ContentView: View {
         isTypingNewNumber = true
         hasEvaluatedResult = false
     }
-      
+    
     private func trigger42Fact() {
         let candidates = nerdFacts.filter { $0 != currentFact }
         currentFact = candidates.randomElement() ?? nerdFacts[0]
         showNerdFact = true
     }
-      
+    
     private func applySmartPercentage() {
         guard let current = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
-         
+        
         if useOrderOfOperations {
             let pct = current / 100.0
             displayValue = formatResult(pct)
-             
+            
             var components = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
             if !components.isEmpty {
                 components[components.count - 1] = formatResult(pct).replacingOccurrences(of: ",", with: ".")
@@ -1004,14 +1058,14 @@ struct ContentView: View {
         } else {
             let cleanExpr = formulaExpression.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
             let tokens = cleanExpr.components(separatedBy: " ").filter { !$0.isEmpty }
-             
+            
             if tokens.count >= 2, let baseVal = Double(tokens[0]) {
                 let res = baseVal * (current / 100.0)
                 displayValue = formatResult(res)
                 formulaDisplay = "\(formatResult(baseVal)) × \(formatResult(current))% ="
                 formulaExpression = formatResult(res)
                 hasEvaluatedResult = true
-                history.append(HistoryItem(expression: "\(formatResult(baseVal)) × \(formatResult(current))%", result: formatResult(res)))
+                appendHistoryItem(expression: "\(formatResult(baseVal)) × \(formatResult(current))%", result: formatResult(res))
             } else {
                 let pct = current / 100.0
                 displayValue = formatResult(pct)
@@ -1020,32 +1074,43 @@ struct ContentView: View {
             }
         }
     }
-      
+    
     private func applyBitwiseOp(_ op: String) {
         appendSymbol(op)
     }
-      
+    
     private func applyBitwiseNot() {
         guard let val = parseHexOrDec(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
         displayValue = String(~val)
     }
-      
+    
     private func calculateResult() {
+        if hasEvaluatedResult {
+            if let lastItem = history.last {
+                let parts = lastItem.expression.components(separatedBy: " ").filter { !$0.isEmpty }
+                if parts.count >= 3 {
+                    let op = parts[1]
+                    let operand = parts[2]
+                    formulaExpression = displayValue + " " + op + " " + operand
+                }
+            }
+        }
+        
         let cleanExpr = formulaExpression.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
-         
+        
         if cleanExpr.contains("/ 0") || cleanExpr.contains("÷ 0") {
             displayValue = "Division durch 0 nicht möglich"
             isTypingNewNumber = true
             hasEvaluatedResult = true
             return
         }
-         
+        
         if containsHexOrBitwise(cleanExpr) {
             if let hexResult = evaluateBitwiseExpression(cleanExpr) {
                 let resStr = String(hexResult)
                 displayValue = resStr
                 formulaDisplay = "\(formulaExpression) ="
-                history.append(HistoryItem(expression: formulaExpression, result: resStr))
+                appendHistoryItem(expression: formulaExpression, result: resStr)
                 formulaExpression = String(hexResult)
             } else {
                 displayValue = "Syntaxfehler"
@@ -1054,14 +1119,14 @@ struct ContentView: View {
             isTypingNewNumber = true
             return
         }
-         
+        
         let result: Double?
         if useOrderOfOperations {
             result = evaluateMathExpression(cleanExpr)
         } else {
             result = evaluateSequentialExpression(cleanExpr)
         }
-         
+        
         if let res = result {
             if res.isInfinite || res.isNaN {
                 displayValue = "Ungültiger Wert"
@@ -1069,7 +1134,7 @@ struct ContentView: View {
                 let formattedRes = formatResult(res)
                 displayValue = formattedRes
                 formulaDisplay = "\(formulaExpression) ="
-                history.append(HistoryItem(expression: formulaExpression, result: formattedRes))
+                appendHistoryItem(expression: formulaExpression, result: formattedRes)
                 formulaExpression = String(res)
             }
             hasEvaluatedResult = true
@@ -1080,15 +1145,22 @@ struct ContentView: View {
             isTypingNewNumber = true
         }
     }
-      
+    
+    private func appendHistoryItem(expression: String, result: String) {
+        if let last = history.last, last.expression == expression && last.result == result {
+            return
+        }
+        history.append(HistoryItem(expression: expression, result: result))
+    }
+
     private func containsHexOrBitwise(_ expr: String) -> Bool {
         let pureBitwiseOps = ["&", "|", "<<", ">>"]
         let hexChars = ["A", "B", "C", "D", "E", "F"]
-         
+        
         if pureBitwiseOps.contains(where: { expr.contains($0) }) || hexChars.contains(where: { expr.contains($0) }) {
             return true
         }
-         
+        
         if expr.contains("^") {
             let tokens = expr.components(separatedBy: " ").filter { !$0.isEmpty }
             for token in tokens {
@@ -1097,13 +1169,13 @@ struct ContentView: View {
                 }
             }
         }
-         
+        
         return false
     }
-      
+    
     private func evaluateBitwiseExpression(_ expr: String) -> Int64? {
         let trimmed = expr.trimmingCharacters(in: .whitespaces)
-         
+        
         if trimmed.hasPrefix("~") {
             let operandStr = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
             if let val = parseHexOrDec(operandStr) {
@@ -1111,20 +1183,20 @@ struct ContentView: View {
             }
             return nil
         }
-         
+        
         let tokens = trimmed.components(separatedBy: " ").filter { !$0.isEmpty }
         guard !tokens.isEmpty, let firstVal = parseHexOrDec(tokens[0]) else {
             return nil
         }
-         
+        
         if tokens.count == 1 {
             return firstVal
         }
-         
+        
         guard tokens.count >= 3 && tokens.count % 2 == 1 else {
             return nil
         }
-         
+        
         var accumulator = firstVal
         var i = 1
         while i < tokens.count - 1 {
@@ -1132,7 +1204,7 @@ struct ContentView: View {
             guard let nextVal = parseHexOrDec(tokens[i + 1]) else {
                 return nil
             }
-             
+            
             switch op {
             case "&": accumulator = accumulator & nextVal
             case "|": accumulator = accumulator | nextVal
@@ -1150,14 +1222,14 @@ struct ContentView: View {
             }
             i += 2
         }
-         
+        
         return accumulator
     }
-      
+    
     private func parseHexOrDec(_ str: String) -> Int64? {
         let clean = str.replacingOccurrences(of: "0x", with: "")
-                     .replacingOccurrences(of: "0X", with: "")
-                     .trimmingCharacters(in: .whitespaces)
+                    .replacingOccurrences(of: "0X", with: "")
+                    .trimmingCharacters(in: .whitespaces)
         if selectedMode == .hexBin || clean.rangeOfCharacter(from: CharacterSet(charactersIn: "ABCDEFabcdef")) != nil {
             return Int64(clean, radix: 16)
         }
@@ -1172,15 +1244,15 @@ struct ContentView: View {
             .replacingOccurrences(of: "'", with: "")
             .replacingOccurrences(of: #"(?<=\d)\.(?=\d{3}\b)"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: " ", with: "")
-         
+        
         var clean = rawExpr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
-         
+        
         while clean.hasPrefix("×") || clean.hasPrefix("÷") || clean.hasPrefix("*") || clean.hasPrefix("/") || clean.hasPrefix("%") {
             clean = String(clean.dropFirst()).trimmingCharacters(in: .whitespaces)
         }
-         
+        
         guard !clean.isEmpty else { return nil }
-         
+        
         if clean.contains("^") {
             let parts = clean.components(separatedBy: "^")
             if parts.count == 2 {
@@ -1191,14 +1263,14 @@ struct ContentView: View {
                 }
             }
         }
-         
+        
         if containsHexOrBitwise(clean) {
             if let bitRes = evaluateBitwiseExpression(clean) {
                 return Double(bitRes)
             }
             return nil
         }
-         
+        
         if clean.contains("mod") || clean.contains("%") {
             let modSymbol = clean.contains("mod") ? "mod" : "%"
             let parts = clean.components(separatedBy: " \(modSymbol) ")
@@ -1213,7 +1285,7 @@ struct ContentView: View {
         var formatted = clean
             .replacingOccurrences(of: "×", with: "*")
             .replacingOccurrences(of: "÷", with: "/")
-                 
+                
         formatted = formatted.replacingOccurrences(
             of: #"(\d|\))\s*\("#,
             with: "$1 * (",
@@ -1224,7 +1296,7 @@ struct ContentView: View {
             with: ") * $1",
             options: .regularExpression
         )
-                 
+                
         var parenBalance = 0
         for char in formatted {
             if char == "(" { parenBalance += 1 }
@@ -1232,80 +1304,81 @@ struct ContentView: View {
             if parenBalance < 0 { return nil }
         }
         if parenBalance != 0 { return nil }
-                 
+                
         let compact = formatted.replacingOccurrences(of: " ", with: "")
         if compact.isEmpty || compact.contains("()") || compact.contains("**") || compact.contains("//") || compact.contains("++") || compact.contains("--") {
             return nil
         }
-                 
+                
         formatted = formatted.replacingOccurrences(
             of: #"(?<![\d.])(\d+)(?![\d.])"#,
             with: "$1.0",
             options: .regularExpression
         )
-                 
+                
         let parsedExpr = NSExpression(format: formatted)
         if let result = parsedExpr.expressionValue(with: nil, context: nil) as? NSNumber {
             let val = result.doubleValue
             return val.isFinite ? val : nil
         }
-                 
+                
         return nil
     }
-      
+    
     private func evaluateSequentialExpression(_ expr: String) -> Double? {
-        let rawExpr = expr
-            .replacingOccurrences(of: "\u{202F}", with: "")
-            .replacingOccurrences(of: "\u{2009}", with: "")
-            .replacingOccurrences(of: "\u{200A}", with: "")
-            .replacingOccurrences(of: "'", with: "")
-            .replacingOccurrences(of: #"(?<=\d)\.(?=\d{3}\b)"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: " ", with: "")
+            let rawExpr = expr
+                .replacingOccurrences(of: "\u{202F}", with: "")
+                .replacingOccurrences(of: "\u{2009}", with: "")
+                .replacingOccurrences(of: "\u{200A}", with: "")
+                .replacingOccurrences(of: "'", with: "")
+                .replacingOccurrences(of: #"(?<=\d)\.(?=\d{3}\b)"#, with: "", options: .regularExpression)
+                // Wichtig: KEIN .replacingOccurrences(of: " ", with: "") hier,
+                // da der Tischrechner die Leerzeichen für die Token-Trennung braucht!
 
-        var clean = rawExpr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
-         
-        while let rangeOfOpen = clean.range(of: "("), let rangeOfClose = clean.range(of: ")") {
-            let innerExpr = String(clean[rangeOfOpen.upperBound..<rangeOfClose.lowerBound])
-            if let innerResult = evaluateSequentialExpression(innerExpr) {
-                clean.replaceSubrange(rangeOfOpen.lowerBound...rangeOfClose.upperBound, with: "\(innerResult)")
-            } else {
-                break
+            var clean = rawExpr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
+            
+            while let rangeOfOpen = clean.range(of: "("), let rangeOfClose = clean.range(of: ")") {
+                let innerExpr = String(clean[rangeOfOpen.upperBound..<rangeOfClose.lowerBound])
+                if let innerResult = evaluateSequentialExpression(innerExpr) {
+                    clean.replaceSubrange(rangeOfOpen.lowerBound...rangeOfClose.upperBound, with: "\(innerResult)")
+                } else {
+                    break
+                }
             }
-        }
-         
-        let tokens = clean.components(separatedBy: " ").filter { !$0.isEmpty }
-        guard var runningResult = Double(tokens.first ?? "") else { return nil }
-         
-        var idx = 1
-        while idx < tokens.count - 1 {
-            let op = tokens[idx]
-            guard let nextVal = Double(tokens[idx + 1]) else { break }
-             
-            switch op {
-            case "+": runningResult += nextVal
-            case "-": runningResult -= nextVal
-            case "×", "*": runningResult *= nextVal
-            case "÷", "/":
-                if nextVal == 0 { return nil }
-                runningResult /= nextVal
-            case "^": runningResult = pow(runningResult, nextVal)
-            case "mod", "%":
-                if nextVal == 0 { return nil }
-                runningResult = fmod(runningResult, nextVal)
-            default: break
+            
+            let tokens = clean.components(separatedBy: " ").filter { !$0.isEmpty }
+            guard var runningResult = Double(tokens.first ?? "") else { return nil }
+            
+            var idx = 1
+            while idx < tokens.count - 1 {
+                let op = tokens[idx]
+                guard let nextVal = Double(tokens[idx + 1]) else { break }
+                
+                switch op {
+                case "+": runningResult += nextVal
+                case "-": runningResult -= nextVal
+                case "×", "*": runningResult *= nextVal
+                case "÷", "/":
+                    if nextVal == 0 { return nil }
+                    runningResult /= nextVal
+                case "^": runningResult = pow(runningResult, nextVal)
+                case "mod", "%":
+                    if nextVal == 0 { return nil }
+                    runningResult = fmod(runningResult, nextVal)
+                default: break
+                }
+                idx += 2
             }
-            idx += 2
+            return runningResult
         }
-        return runningResult
-    }
-      
+    
     private func applyScientificFunc(_ function: String) {
         guard let val = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
         var res: Double = 0.0
-         
+        
         let angleMultiplier = currentAngleMode.multiplierToRadians
         let invAngleMultiplier = currentAngleMode.multiplierFromRadians
-         
+        
         switch function {
         case "sin": res = sin(val * angleMultiplier)
         case "cos": res = cos(val * angleMultiplier)
@@ -1332,17 +1405,17 @@ struct ContentView: View {
             res = factorial(Int(val))
         default: break
         }
-         
+        
         let exprStr = "\(function)(\(formatResult(val)))"
         formulaDisplay = "\(exprStr) ="
         let resStr = formatResult(res)
         displayValue = resStr
         formulaExpression = resStr
-        history.append(HistoryItem(expression: exprStr, result: resStr))
+        appendHistoryItem(expression: exprStr, result: resStr)
         hasEvaluatedResult = true
         isTypingNewNumber = true
     }
-      
+    
     private func factorial(_ n: Int) -> Double {
         guard n >= 0 else { return 0 }
         if n == 0 || n == 1 { return 1 }
@@ -1350,7 +1423,7 @@ struct ContentView: View {
         for i in 2...min(n, 170) { fact *= Double(i) }
         return fact
     }
-      
+    
     private func memoryClear() { memoryValue = 0.0; hasMemory = false }
     private func memoryRecall() { displayValue = formatResult(memoryValue); isTypingNewNumber = true }
     private func memoryAdd() {
@@ -1363,7 +1436,7 @@ struct ContentView: View {
             memoryValue -= val; hasMemory = true; isTypingNewNumber = true
         }
     }
-      
+    
     private func formatResult(_ val: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -1372,10 +1445,10 @@ struct ContentView: View {
         formatter.maximumFractionDigits = 4
         formatter.usesGroupingSeparator = true
         formatter.groupingSeparator = "."
-         
+        
         return formatter.string(from: NSNumber(value: val)) ?? "\(val)"
     }
-      
+    
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
