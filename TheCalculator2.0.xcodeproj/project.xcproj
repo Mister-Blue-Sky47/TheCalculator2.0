@@ -53,6 +53,7 @@
         "DEVELOPMENT_TEAM": "8X92NMKRCR",
         "ENABLE_PREVIEWS": "YES",
         "GENERATE_INFOPLIST_FILE": "YES",
+        "INFOPLIST_KEY_NSCameraUsageDescription": "„Wird benötigt, um IP-Adressen und Netzwerkinformationen per Dokumenten-Scan einzulesen.“",
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation": "YES",
         "INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents": "YES",
         "INFOPLIST_KEY_UILaunchScreen_Generation": "YES",
