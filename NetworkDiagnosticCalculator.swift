@@ -54,34 +54,44 @@ struct NetworkDiagnosticCalculator {
     
     // Statische Methode zur MAC-Adressanalyse (perfekt für SwiftUI Views & Controller)
     static func lookupMAC(_ mac: String) -> MACLookupResult {
-        // Bereinigen der MAC-Adresse (nur Hex-Zeichen behalten)
-        let cleaned = mac.uppercased().components(separatedBy: CharacterSet(charactersIn: "0123456789ABCDEF").inverted).joined()
-        
-        guard cleaned.count >= 6 else {
-            return MACLookupResult(macAddress: mac, vendor: "Ungültige MAC-Adresse (Zu kurz)", isValid: false)
-        }
-        
-        let prefix = String(cleaned.prefix(6))
-        
-        // 1. Prüfen auf zufällige / private MAC (LAA-Bit / Locally Administered Address: Bit 1 des ersten Bytes gesetzt)
-        if let firstByte = UInt8(prefix.prefix(2), radix: 16), (firstByte & 0x02) != 0 {
-            return MACLookupResult(macAddress: mac, vendor: "Private / Zufällige MAC-Adresse (iOS / Android / macOS)", isValid: true)
-        }
-        
-        // 2. OUI in der Datenbank suchen
-        if let vendor = ouiDatabase[prefix] {
-            return MACLookupResult(macAddress: mac, vendor: vendor, isValid: true)
-        } else {
-            // Formatiertes OUI für die Anzeige (XX:XX:XX)
-            let formattedOUI = stride(from: 0, to: 6, by: 2).map {
-                let start = prefix.index(prefix.startIndex, offsetBy: $0)
-                let end = prefix.index(start, offsetBy: 2)
-                return String(prefix[start..<end])
-            }.joined(separator: ":")
+            let cleaned = mac.uppercased().components(separatedBy: CharacterSet(charactersIn: "0123456789ABCDEF").inverted).joined()
             
-            return MACLookupResult(macAddress: mac, vendor: "Unbekannter Hersteller (OUI: \(formattedOUI))", isValid: true)
+            guard cleaned.count >= 6 else {
+                return MACLookupResult(
+                    macAddress: mac,
+                    vendor: "Ungültige MAC (mind. 6 Hex-Zeichen nötig)",
+                    isValid: false
+                )
+            }
+            
+            let prefix = String(cleaned.prefix(6))
+            
+            // 1. Prüfen auf zufällige / private MAC (LAA-Bit / Locally Administered Address: Bit 1 des ersten Bytes gesetzt)
+            if let firstByte = UInt8(prefix.prefix(2), radix: 16), (firstByte & 0x02) != 0 {
+                return MACLookupResult(
+                    macAddress: mac,
+                    vendor: "Private / Zufällige MAC-Adresse (iOS / Android / macOS)",
+                    isValid: true
+                )
+            }
+            
+            // 2. OUI in der Datenbank suchen
+            if let vendor = ouiDatabase[prefix] {
+                return MACLookupResult(macAddress: mac, vendor: vendor, isValid: true)
+            } else {
+                let formattedOUI = stride(from: 0, to: 6, by: 2).map {
+                    let start = prefix.index(prefix.startIndex, offsetBy: $0)
+                    let end = prefix.index(start, offsetBy: 2)
+                    return String(prefix[start..<end])
+                }.joined(separator: ":")
+                
+                return MACLookupResult(
+                    macAddress: mac,
+                    vendor: "Unbekannter Hersteller (OUI: \(formattedOUI))",
+                    isValid: true
+                )
+            }
         }
-    }
     
     // Standard-Ports für das Diagnose-Modul
     static let standardPorts: [CommonPort] = [

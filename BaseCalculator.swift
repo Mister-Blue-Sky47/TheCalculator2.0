@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct BaseCalculator {
     struct ConversionResult {
@@ -24,6 +25,48 @@ struct BaseCalculator {
         )
     }
 
+    // MARK: - Base64 En- & Decoding
+
+        static func encodeBase64(_ text: String) -> String {
+            guard let data = text.data(using: .utf8) else { return "" }
+            return data.base64EncodedString()
+        }
+
+        static func decodeBase64(_ base64String: String) -> String? {
+            let cleaned = base64String.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty,
+                  let data = Data(base64Encoded: cleaned),
+                  let decoded = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+            return decoded
+        }
+
+        // MARK: - Hashing (MD5, SHA-256, SHA-512)
+
+        enum HashAlgorithm: String, CaseIterable, Identifiable {
+            case md5 = "MD5"
+            case sha256 = "SHA-256"
+            case sha512 = "SHA-512"
+
+            var id: String { self.rawValue }
+        }
+
+        static func hash(_ text: String, algorithm: HashAlgorithm) -> String {
+            let data = Data(text.utf8)
+            switch algorithm {
+            case .md5:
+                let digest = Insecure.MD5.hash(data: data)
+                return digest.map { String(format: "%02x", $0) }.joined()
+            case .sha256:
+                let digest = SHA256.hash(data: data)
+                return digest.map { String(format: "%02x", $0) }.joined()
+            case .sha512:
+                let digest = SHA512.hash(data: data)
+                return digest.map { String(format: "%02x", $0) }.joined()
+            }
+        }
+    
     // Kompatibilitäts-Methode für File.swift
         static func bitwiseOp(_ a: Int64, _ b: Int64 = 0, op: String) -> Int64 {
             switch op {

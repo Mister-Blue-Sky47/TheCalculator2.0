@@ -78,6 +78,29 @@ struct ScientificCalculator {
         )
     ]
     
+    // MARK: - Baustein A: log2, exp, Delta%
+
+        /// Logarithmus zur Basis 2 (nur für Werte > 0 definiert)
+        static func log2Value(_ x: Double) -> Double? {
+            guard x.isFinite, x > 0 else { return nil }
+            let res = Foundation.log2(x)
+            return res.isFinite ? res : nil
+        }
+
+        /// Exponentialfunktion e^x
+        static func expValue(_ x: Double) -> Double? {
+            guard x.isFinite else { return nil }
+            let res = Foundation.exp(x)
+            return res.isFinite ? res : nil
+        }
+
+        /// Prozentuale Änderung von `oldValue` auf `newValue`: ((newValue - oldValue) / oldValue) * 100
+        static func deltaPercent(from oldValue: Double, to newValue: Double) -> Double? {
+            guard oldValue.isFinite, newValue.isFinite, oldValue != 0 else { return nil }
+            let res = ((newValue - oldValue) / oldValue) * 100.0
+            return res.isFinite ? res : nil
+        }
+    
     // Erweiterte wissenschaftliche Berechnungen
     static func evaluateScientific(expression: String) -> Double? {
         // Hier können bei Bedarf erweiterte Auswertungen oder Formeln ergänzt werden

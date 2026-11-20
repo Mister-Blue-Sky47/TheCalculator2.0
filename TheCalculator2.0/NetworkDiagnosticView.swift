@@ -190,50 +190,58 @@ struct NetworkDiagnosticView: View {
     }
     
     private func calculateTransferTime() -> String {
-        let sizeVal = Double(fileSizeInput.replacingOccurrences(of: ",", with: ".")) ?? 0
-        let bwVal = Double(bandwidthInput.replacingOccurrences(of: ",", with: ".")) ?? 0
-        guard sizeVal > 0, bwVal > 0 else { return "0 s" }
-        
-        let sizeToBits: [String: Double] = [
-            "Bit": 1,
-            "Byte": 8,
-            "KB": 8e3, "MB": 8e6, "GB": 8e9, "TB": 8e12, "PB": 8e15, "EB": 8e18,
-            "KiB": 8 * pow(1024, 1),
-            "MiB": 8 * pow(1024, 2),
-            "GiB": 8 * pow(1024, 3),
-            "TiB": 8 * pow(1024, 4),
-            "PiB": 8 * pow(1024, 5),
-            "EiB": 8 * pow(1024, 6)
-        ]
-        
-        let bwToBps: [String: Double] = [
-            "bit/s": 1,
-            "kbit/s": 1e3,
-            "Mbit/s": 1e6,
-            "Gbit/s": 1e9,
-            "Tbit/s": 1e12,
-            "KB/s": 8e3,
-            "MB/s": 8e6,
-            "GB/s": 8e9
-        ]
-        
-        let totalBits = sizeVal * (sizeToBits[selectedSizeUnit] ?? 8)
-        let effectiveBps = bwVal * (bwToBps[selectedBandwidthUnit] ?? 1) * (includeProtocolOverhead ? 0.94 : 1.0)
-        let seconds = totalBits / effectiveBps
-        
-        if seconds < 1 {
-            return String(format: "%.0f ms", seconds * 1000)
-        } else if seconds < 60 {
-            return String(format: "%.2f s", seconds)
-        } else if seconds < 3600 {
-            let m = Int(seconds) / 60
-            let s = Int(seconds) % 60
-            return "\(m) min \(s) s"
-        } else {
-            let h = Int(seconds) / 3600
-            let m = (Int(seconds) % 3600) / 60
-            let s = Int(seconds) % 60
-            return "\(h) h \(m) min \(s) s"
-        }
-    }
-}
+            let sizeVal = Double(fileSizeInput.replacingOccurrences(of: ",", with: ".")) ?? 0
+            let bwVal = Double(bandwidthInput.replacingOccurrences(of: ",", with: ".")) ?? 0
+            guard sizeVal > 0, bwVal > 0 else { return "Wert eingeben" }
+            
+            let sizeToBits: [String: Double] = [
+                "Bit": 1,
+                "Byte": 8,
+                "KB": 8e3, "MB": 8e6, "GB": 8e9, "TB": 8e12, "PB": 8e15, "EB": 8e18,
+                "KiB": 8 * pow(1024, 1),
+                "MiB": 8 * pow(1024, 2),
+                "GiB": 8 * pow(1024, 3),
+                "TiB": 8 * pow(1024, 4),
+                "PiB": 8 * pow(1024, 5),
+                "EiB": 8 * pow(1024, 6)
+            ]
+            
+            let bwToBps: [String: Double] = [
+                "bit/s": 1,
+                "kbit/s": 1e3,
+                "Mbit/s": 1e6,
+                "Gbit/s": 1e9,
+                "Tbit/s": 1e12,
+                "KB/s": 8e3,
+                "MB/s": 8e6,
+                "GB/s": 8e9
+            ]
+            
+            let totalBits = sizeVal * (sizeToBits[selectedSizeUnit] ?? 8)
+            let effectiveBps = bwVal * (bwToBps[selectedBandwidthUnit] ?? 1) * (includeProtocolOverhead ? 0.94 : 1.0)
+            guard effectiveBps > 0 else { return "Wert eingeben" }
+            
+            let seconds = totalBits / effectiveBps
+            guard seconds.isFinite else { return "Sehr groß" }
+            
+            if seconds < 1 {
+                return String(format: "%.0f ms", seconds * 1000)
+            } else if seconds < 60 {
+                return String(format: "%.2f s", seconds)
+            } else if seconds < 3600 {
+                let m = Int(seconds) / 60
+                let s = Int(seconds) % 60
+                return "\(m) min \(s) s"
+            } else if seconds < 86400 {
+                let h = Int(seconds) / 3600
+                let m = (Int(seconds) % 3600) / 60
+                let s = Int(seconds) % 60
+                return "\(h) h \(m) min \(s) s"
+            } else {
+                        let d = Int(seconds) / 86400
+                        let h = (Int(seconds) % 86400) / 3600
+                        let m = (Int(seconds) % 3600) / 60
+                        return "\(d) d \(h) h \(m) min"
+                    }
+                } // <-- schließt calculateTransferTime()
+            } // <-- schließt struct NetworkDiagnosticView
