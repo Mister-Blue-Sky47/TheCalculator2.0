@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct TheCalculator2_0App: App {
+    @StateObject private var volleyballStore = VolleyballTournamentStore()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(volleyballStore)
         }
     }
 }

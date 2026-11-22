@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ElektroView: View {
-    @State private var subTab = 0 // 0: Ohm, 1: Spannungsfall, 2: USV, 3: Widerstand, 4: E-Mobilität
+    @State private var subTab = 0 // 0: Ohm, 1: Spannungsfall, 2: USV, 3: Widerstand, 4: E-Mobilität, 5: Leistung (P/S/Q/Nutz/Verlust)
     @FocusState private var isInputFocused: Bool
     
     // Ohm'sches Gesetz State
@@ -39,22 +39,33 @@ struct ElektroView: View {
     @State private var selectedPowerKW: Double = 11.0       // Standard Wallbox 11 kW
     @State private var includeLosses: Bool = true           // ~10% Ladeverluste
 
+    // Leistungsarten (Wirk P, Schein S, Blind Q, Nutz P_ab, Verlust P_V)
+    @State private var triangleU: String = "230"
+    @State private var triangleI: String = "10"
+    @State private var triangleCosPhi: String = "0.85"
+    @State private var triangleResult: ElektroCalculator.PowerTriangleResult? = nil
+
+    @State private var pZuInput: String = "1000"
+    @State private var pAbInput: String = "850"
+    @State private var pVerlustInput: String = ""
+    @State private var efficiencyResult: ElektroCalculator.EfficiencyPowerResult? = nil
+
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
                 
-                // Unter-Tab Auswahl (Erweitert um E-Mobilität)
                 Picker("Elektro Auswahl", selection: $subTab) {
                     Text("Ohm / P").tag(0)
                     Text("Spannungsfall").tag(1)
                     Text("USV").tag(2)
                     Text("Widerstand").tag(3)
                     Text("E-Mobilität").tag(4)
+                    Text("Leistung").tag(5)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 8)
                 .padding(.top, 4)
-                .onChange(of: subTab) { _ in
+                .onChange(of: subTab) { _, _ in
                     isInputFocused = false
                 }
                 
@@ -69,6 +80,8 @@ struct ElektroView: View {
                     resistorColorView
                 case 4:
                     eMobilityView
+                case 5:
+                    powerTypesView
                 default:
                     EmptyView()
                 }
@@ -344,124 +357,225 @@ struct ElektroView: View {
     }
 
     // MARK: - 5. E-Mobilität & Ladezeit View
-        private var eMobilityView: some View {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("E-Mobilität & Ladeinfrastruktur (inkl. ~10% Verluste)")
+    private var eMobilityView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("E-Mobilität & Ladeinfrastruktur (inkl. ~10% Verluste)")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.blue)
+            
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                GridRow {
+                    Text("Akkukap. (kWh):").font(.caption2)
+                    TextField("kWh", text: $batteryCapacityInput)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("Start-SoC (%):").font(.caption2)
+                    TextField("Start %", text: $startSoCInput)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                }
+                GridRow {
+                    Text("Ziel-SoC (%):").font(.caption2)
+                    TextField("Ziel %", text: $targetSoCInput)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad)
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Ladeleistung:").font(.caption2)
+                    Spacer()
+                    Text(String(format: "%.1f kW", selectedPowerKW))
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundColor(.blue)
+                }
+                
+                Slider(value: $selectedPowerKW, in: 2.2...350.0, step: 2.5)
+                    .accentColor(.blue)
+                
+                HStack(spacing: 6) {
+                    Button("11kW") { selectedPowerKW = 11.0 }
+                    Button("22kW") { selectedPowerKW = 22.0 }
+                    Button("150kW") { selectedPowerKW = 150.0 }
+                    Button("165kW") { selectedPowerKW = 165.0 }
+                }
+                .buttonStyle(.bordered)
+                .font(.system(size: 10))
+            }
+            
+            Toggle("Ladeverluste einrechnen (~10%)", isOn: $includeLosses)
+                .font(.caption2)
+            
+            Divider()
+                        
+            HStack {
+                Text("Berechnete Ladezeit:")
                     .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.blue)
-                
-                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
-                    GridRow {
-                        Text("Akkukap. (kWh):").font(.caption2)
-                        TextField("kWh", text: $batteryCapacityInput)
-                            .textFieldStyle(.roundedBorder)
-                            .keyboardType(.decimalPad)
-                    }
-                    GridRow {
-                        Text("Start-SoC (%):").font(.caption2)
-                        TextField("Start %", text: $startSoCInput)
-                            .textFieldStyle(.roundedBorder)
-                            .keyboardType(.numberPad)
-                    }
-                    GridRow {
-                        Text("Ziel-SoC (%):").font(.caption2)
-                        TextField("Ziel %", text: $targetSoCInput)
-                            .textFieldStyle(.roundedBorder)
-                            .keyboardType(.numberPad)
-                    }
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(calculateChargingTime())
+                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .foregroundColor(.green)
+            }
+        }
+        .padding(10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(8)
+        .padding(.horizontal, 8)
+    }
+
+    // MARK: - 6. Leistungsarten (Wirk, Schein, Blind, Nutz, Verlust)
+    private var powerTypesView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Leistungsdreieck (Wirk-, Schein- & Blindleistung)")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.blue)
+
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                GridRow {
+                    Text("U (Volt):").font(.caption2)
+                    TextField("Spannung U", text: $triangleU)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
                 }
-                
-                // Schieberegler für Ladeleistung
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Ladeleistung:").font(.caption2)
-                        Spacer()
-                        Text(String(format: "%.1f kW", selectedPowerKW))
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            .foregroundColor(.blue)
-                    }
-                    
-                    Slider(value: $selectedPowerKW, in: 2.2...350.0, step: 2.5)
-                        .accentColor(.blue)
-                    
-                    // Schnellauswahl-Buttons für gängige Standards (inkl. 165kW für Mazda 6e Schnellladen)
-                    HStack(spacing: 6) {
-                        Button("11kW") { selectedPowerKW = 11.0 }
-                        Button("22kW") { selectedPowerKW = 22.0 }
-                        Button("150kW") { selectedPowerKW = 150.0 }
-                        Button("165kW") { selectedPowerKW = 165.0 }
-                    }
-                    .buttonStyle(.bordered)
-                    .font(.system(size: 10))
+                GridRow {
+                    Text("I (Ampere):").font(.caption2)
+                    TextField("Strom I", text: $triangleI)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
                 }
-                
-                Toggle("Ladeverluste einrechnen (~10%)", isOn: $includeLosses)
-                    .font(.caption2)
-                
-                Divider()
-                            
-                            HStack {
-                                Text("Berechnete Ladezeit:")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text(calculateChargingTime())
-                                    .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.green)
-                            }
-                        }
-                        .padding(10)
-                        .background(Color(UIColor.secondarySystemBackground))
-                        .cornerRadius(8)
-                        .padding(.horizontal, 8)
-                    }
-                    
-                    private func calculateChargingTime() -> String {
-                        let capacity = Double(batteryCapacityInput.replacingOccurrences(of: ",", with: ".")) ?? 0
-                        let startSoC = Double(startSoCInput.replacingOccurrences(of: ",", with: ".")) ?? 0
-                        let targetSoC = Double(targetSoCInput.replacingOccurrences(of: ",", with: ".")) ?? 0
-                        
-                        guard capacity > 0, targetSoC > startSoC, selectedPowerKW > 0 else {
-                            return "Ungültig"
-                        }
-                        
-                        var totalSeconds: Double = 0
-                        let step = 1.0 // 1%-Schritte für exakte Integration der Ladekurve
-                        var currentSoC = startSoC
-                        
-                        while currentSoC < targetSoC {
-                            let nextSoC = min(currentSoC + step, targetSoC)
-                            let segmentPercent = nextSoC - currentSoC
-                            let energySegmentKW = capacity * (segmentPercent / 100.0)
-                            
-                            // Realistische Ladeleistung in Abhängigkeit vom SoC (Ladeend-Drosselung)
-                            var currentPower = selectedPowerKW
-                            if selectedPowerKW > 50.0 { // Gilt für HPC-Schnellladen (>50 kW)
-                                if currentSoC >= 90.0 {
-                                    currentPower = min(currentPower, 25.0) // Starke Drosselung auf max. 25 kW ab 90%
-                                } else if currentSoC >= 80.0 {
-                                    currentPower = min(currentPower, 50.0) // Drosselung auf max. 50 kW ab 80%
-                                }
-                            }
-                            
-                            let effectivePower = includeLosses ? currentPower / 1.10 : currentPower
-                            let hoursForSegment = energySegmentKW / effectivePower
-                            totalSeconds += hoursForSegment * 3600
-                            
-                            currentSoC = nextSoC
-                        }
-                        
-                        if totalSeconds < 60 {
-                            return String(format: "%.0f s", totalSeconds)
-                        } else if totalSeconds < 3600 {
-                            let m = Int(totalSeconds) / 60
-                            let s = Int(totalSeconds) % 60
-                            return "\(m) min \(s) s"
-                        } else {
-                            let h = Int(totalSeconds) / 3600
-                            let m = (Int(totalSeconds) % 3600) / 60
-                            return "\(h) h \(m) min"
-                        }
-                    }
+                GridRow {
+                    Text("cos φ:").font(.caption2)
+                    TextField("0.0 bis 1.0", text: $triangleCosPhi)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
                 }
+            }
+
+            Button("Leistungsdreieck berechnen") {
+                let u = Double(triangleU.replacingOccurrences(of: ",", with: "."))
+                let i = Double(triangleI.replacingOccurrences(of: ",", with: "."))
+                let pf = Double(triangleCosPhi.replacingOccurrences(of: ",", with: "."))
+                triangleResult = ElektroCalculator.calculatePowerTriangle(voltageU: u, currentI: i, cosPhi: pf)
+            }
+            .buttonStyle(.borderedProminent)
+
+            if let tri = triangleResult {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Wirkleistung P: \(String(format: "%.2f", tri.activePowerW)) W")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundColor(.green)
+                    Text("Scheinleistung S: \(String(format: "%.2f", tri.apparentPowerVA)) VA")
+                        .font(.system(size: 13, design: .monospaced))
+                    Text("Blindleistung Q: \(String(format: "%.2f", tri.reactivePowerVar)) var")
+                        .font(.system(size: 13, design: .monospaced))
+                }
+            }
+
+            Divider()
+
+            Text("Nutz- & Verlustleistung / Wirkungsgrad")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.blue)
+
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                GridRow {
+                    Text("Zugeführt P_zu (W):").font(.caption2)
+                    TextField("Eingang W", text: $pZuInput)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("Nutz P_ab (W):").font(.caption2)
+                    TextField("Ausgang W", text: $pAbInput)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
+                }
+                GridRow {
+                    Text("Verlust P_V (W):").font(.caption2)
+                    TextField("Optional", text: $pVerlustInput)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.decimalPad)
+                }
+            }
+
+            Button("Nutz- & Verlustleistung berechnen") {
+                let pZu = Double(pZuInput.replacingOccurrences(of: ",", with: "."))
+                let pAb = Double(pAbInput.replacingOccurrences(of: ",", with: "."))
+                let pV = Double(pVerlustInput.replacingOccurrences(of: ",", with: "."))
+                efficiencyResult = ElektroCalculator.calculateUsefulAndLossPower(inputPowerW: pZu, usefulPowerW: pAb, lossPowerW: pV)
+            }
+            .buttonStyle(.bordered)
+
+            if let eff = efficiencyResult {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Nutzleistung P_ab: \(String(format: "%.2f", eff.usefulPowerW)) W")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundColor(.green)
+                    Text("Verlustleistung P_V: \(String(format: "%.2f", eff.lossPowerW)) W")
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundColor(.orange)
+                    Text("Wirkungsgrad η: \(String(format: "%.1f", eff.efficiencyPercent)) %")
+                        .font(.system(size: 13, design: .monospaced))
+                }
+            }
+        }
+        .padding(10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(8)
+        .padding(.horizontal, 8)
+    }
+    
+    private func calculateChargingTime() -> String {
+        let capacity = Double(batteryCapacityInput.replacingOccurrences(of: ",", with: ".")) ?? 0
+        let startSoC = Double(startSoCInput.replacingOccurrences(of: ",", with: ".")) ?? 0
+        let targetSoC = Double(targetSoCInput.replacingOccurrences(of: ",", with: ".")) ?? 0
+        
+        guard capacity > 0, targetSoC > startSoC, selectedPowerKW > 0 else {
+            return "Ungültig"
+        }
+        
+        var totalSeconds: Double = 0
+        let step = 1.0 // 1%-Schritte für exakte Integration der Ladekurve
+        var currentSoC = startSoC
+        
+        while currentSoC < targetSoC {
+            let nextSoC = min(currentSoC + step, targetSoC)
+            let segmentPercent = nextSoC - currentSoC
+            let energySegmentKW = capacity * (segmentPercent / 100.0)
+            
+            var currentPower = selectedPowerKW
+            if selectedPowerKW > 50.0 {
+                if currentSoC >= 90.0 {
+                    currentPower = min(currentPower, 25.0)
+                } else if currentSoC >= 80.0 {
+                    currentPower = min(currentPower, 50.0)
+                }
+            }
+            
+            let effectivePower = includeLosses ? currentPower / 1.10 : currentPower
+            let hoursForSegment = energySegmentKW / effectivePower
+            totalSeconds += hoursForSegment * 3600
+            
+            currentSoC = nextSoC
+        }
+        
+        if totalSeconds < 60 {
+            return String(format: "%.0f s", totalSeconds)
+        } else if totalSeconds < 3600 {
+            let m = Int(totalSeconds) / 60
+            let s = Int(totalSeconds) % 60
+            return "\(m) min \(s) s"
+        } else {
+            let h = Int(totalSeconds) / 3600
+            let m = (Int(totalSeconds) % 3600) / 60
+            return "\(h) h \(m) min"
+        }
+    }
+}

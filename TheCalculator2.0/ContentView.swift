@@ -1,3 +1,4 @@
+
 //
 //  ContentView.swift
 //  TheCalculator2.0
@@ -166,6 +167,9 @@ struct ContentView: View {
     @State private var showNerdFact: Bool = false
     @State private var currentFact: String = ""
     
+    private let maxHistoryItems = 100
+    @State private var showClearHistoryAlert: Bool = false
+    
     private let nerdFacts: [String] = [
         "42 – Die Antwort auf das Leben, das Universum und den ganzen Rest. (Und vergiss dein Handtuch nicht!)",
         "0x2A in Hex, 0b101010 in Binär – und 100 % die richtige Antwort in der IHK-Prüfung.",
@@ -229,13 +233,8 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: [.basic, .scientific, .hexBin].contains(selectedMode) ? 260 : .infinity)
                     
-                    if [.basic, .scientific, .hexBin].contains(selectedMode) {
-                        activeModeContent
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        activeModeContent
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                    activeModeContent
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -458,8 +457,7 @@ struct ContentView: View {
     
     private func constantRow(_ item: PhysicsConstant) -> some View {
         Button(action: {
-            let valStr = String(item.value)
-            appendDigit(valStr)
+            insertConstant(item.value)
             showConstantsSheet = false
         }) {
             HStack {
@@ -468,7 +466,7 @@ struct ContentView: View {
                         .font(.body)
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
-                    Text("\(item.symbol) = \(item.value) \(item.unit)")
+                    Text("\(item.symbol) = \(formatConstantPreview(item.value)) \(item.unit)")
                         .font(.caption)
                         .fontDesign(.monospaced)
                         .foregroundColor(.secondary)
@@ -478,6 +476,347 @@ struct ContentView: View {
                     .foregroundColor(.blue)
             }
         }
+    }
+
+    private func formatConstantPreview(_ val: Double) -> String {
+        if val != 0 && (abs(val) < 1e-4 || abs(val) >= 1e9) {
+            return String(format: "%.6e", val).replacingOccurrences(of: ".", with: ",")
+        }
+        return formatResult(val)
+    }
+
+    private func insertConstant(_ value: Double) {
+        let rawStr = String(value)
+        let displayStr = formatConstantPreview(value)
+
+        if hasEvaluatedResult || formulaExpression.trimmingCharacters(in: .whitespaces).isEmpty {
+            displayValue = displayStr
+            formulaExpression = rawStr
+            hasEvaluatedResult = false
+        } else {
+            let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
+            if let lastChar = trimmed.last,
+               ["+", "-", "×", "÷", "^", "("].contains(String(lastChar)) || trimmed.hasSuffix("mod") {
+                displayValue = displayStr
+                formulaExpression = trimmed + " " + rawStr
+            } else {
+                var tokens = trimmed.components(separatedBy: " ").filter { !$0.isEmpty }
+                if !tokens.isEmpty {
+                    tokens[tokens.count - 1] = rawStr
+                    formulaExpression = tokens.joined(separator: " ")
+                } else {
+                    formulaExpression = rawStr
+                }
+                displayValue = displayStr
+            }
+        }
+        formulaDisplay = formulaExpression
+        isTypingNewNumber = true
+    }
+
+    private func appendDigit(_ digit: String) {
+        if hasEvaluatedResult {
+            displayValue = digit
+            formulaExpression = digit
+            hasEvaluatedResult = false
+            isTypingNewNumber = false
+        } else if isTypingNewNumber {
+            displayValue = digit
+            let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                formulaExpression = digit
+            } else if let lastChar = trimmed.last,
+                      ["+", "-", "×", "÷", "^", "(", ")"].contains(String(lastChar)) || trimmed.hasSuffix("mod") {
+                formulaExpression = trimmed + " " + digit
+            } else {
+                formulaExpression = digit
+            }
+            isTypingNewNumber = false
+        } else {
+            if displayValue == "0" {
+                displayValue = digit
+                if formulaExpression.hasSuffix("0") {
+                    formulaExpression = String(formulaExpression.dropLast()) + digit
+                } else {
+                    formulaExpression += digit
+                }
+            } else {
+                displayValue += digit
+                formulaExpression += digit
+            }
+        }
+        formulaExpression = formulaExpression.replacingOccurrences(of: "  ", with: " ")
+        formulaDisplay = formulaExpression
+    }
+
+    private func appendSymbol(_ symbol: String) {
+        let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
+        if hasEvaluatedResult {
+            formulaExpression = displayValue + " " + symbol
+            hasEvaluatedResult = false
+        } else if symbol == "(" {
+            if trimmed.isEmpty || trimmed == "0" {
+                formulaExpression = "("
+            } else {
+                formulaExpression = trimmed + " ("
+            }
+        } else if !trimmed.isEmpty {
+            formulaExpression = trimmed + " " + symbol
+        } else {
+            formulaExpression = displayValue + " " + symbol
+        }
+        formulaExpression = formulaExpression.replacingOccurrences(of: "  ", with: " ")
+        formulaDisplay = formulaExpression
+        isTypingNewNumber = true
+    }
+
+    private func deleteLastChar() {
+        if hasEvaluatedResult {
+            clear()
+            return
+        }
+
+        var trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            displayValue = "0"
+            isTypingNewNumber = true
+            return
+        }
+
+        if trimmed.hasSuffix("mod") {
+            trimmed = String(trimmed.dropLast(3)).trimmingCharacters(in: .whitespaces)
+        } else {
+            trimmed.removeLast()
+            trimmed = trimmed.trimmingCharacters(in: .whitespaces)
+        }
+
+        formulaExpression = trimmed
+        formulaDisplay = formulaExpression
+
+        let tokens = trimmed.components(separatedBy: " ").filter { !$0.isEmpty }
+        if let lastToken = tokens.last,
+           let num = Double(lastToken.replacingOccurrences(of: ",", with: ".")) {
+            displayValue = formatResult(num)
+            isTypingNewNumber = false
+        } else if let lastToken = tokens.last,
+                  !["+", "-", "×", "÷", "^", "(", ")", "mod"].contains(lastToken) {
+            displayValue = lastToken.replacingOccurrences(of: ".", with: ",")
+            isTypingNewNumber = false
+        } else {
+            displayValue = "0"
+            isTypingNewNumber = true
+        }
+    }
+
+    private func applySmartPercentage() {
+        let cleanDisplay = displayValue
+            .replacingOccurrences(of: ".", with: "")
+            .replacingOccurrences(of: ",", with: ".")
+        guard let current = Double(cleanDisplay) else { return }
+
+        let cleanExpr = formulaExpression
+            .replacingOccurrences(of: ",", with: ".")
+            .trimmingCharacters(in: .whitespaces)
+        let tokens = cleanExpr.components(separatedBy: " ").filter { !$0.isEmpty }
+
+        if useOrderOfOperations {
+            // MATH-MODUS: Algebraisch (% = / 100, Punkt-vor-Strich bleibt erhalten)
+            let pct = current / 100.0
+            let rawStr = String(pct)
+            displayValue = formatResult(pct)
+            if !tokens.isEmpty && !hasEvaluatedResult {
+                var updated = tokens
+                if let last = updated.last, Double(last) != nil {
+                    updated[updated.count - 1] = rawStr
+                } else {
+                    updated.append(rawStr)
+                }
+                formulaExpression = updated.joined(separator: " ")
+            } else {
+                formulaExpression = rawStr
+                hasEvaluatedResult = false
+            }
+            formulaDisplay = formulaExpression
+            isTypingNewNumber = true
+        } else {
+            // TISCHRECHNER-MODUS: Kaufmännischer Auf-/Abschlag auf die laufende Zwischensumme
+            if tokens.count >= 3 {
+                let op = tokens[tokens.count - 2]
+                let prefixExpr = tokens.dropLast(2).joined(separator: " ")
+                let baseVal = evaluateSequentialExpression(prefixExpr) ?? Double(tokens[0]) ?? 0.0
+                let pctAmount = baseVal * (current / 100.0)
+                let res: Double
+                switch op {
+                case "+": res = baseVal + pctAmount
+                case "-": res = baseVal - pctAmount
+                case "×", "*": res = pctAmount
+                case "÷", "/":
+                    guard current != 0 else {
+                        displayValue = "Division durch 0"
+                        isTypingNewNumber = true
+                        return
+                    }
+                    res = baseVal / (current / 100.0)
+                default:
+                    res = pctAmount
+                }
+                let formattedRes = formatResult(res)
+                let exprLabel = "\(formatResult(baseVal)) \(op) \(formatResult(current))%"
+                displayValue = formattedRes
+                formulaDisplay = "\(exprLabel) ="
+                formulaExpression = String(res)
+                hasEvaluatedResult = true
+                isTypingNewNumber = true
+                appendHistoryItem(expression: exprLabel, result: formattedRes)
+            } else {
+                let pct = current / 100.0
+                displayValue = formatResult(pct)
+                formulaExpression = String(pct)
+                formulaDisplay = formulaExpression
+                isTypingNewNumber = true
+            }
+        }
+    }
+
+    private func evaluateMathExpression(_ expr: String) -> Double? {
+        var clean = expr
+            .replacingOccurrences(of: "\u{202F}", with: "")
+            .replacingOccurrences(of: "\u{2009}", with: "")
+            .replacingOccurrences(of: "\u{200A}", with: "")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: #"(?<=\d)\.(?=\d{3}\b)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "=", with: "")
+            .replacingOccurrences(of: "×", with: "*")
+            .replacingOccurrences(of: "÷", with: "/")
+            .trimmingCharacters(in: .whitespaces)
+
+        guard !clean.isEmpty else { return nil }
+
+        clean = clean.replacingOccurrences(of: #"(\d|\))\s*\("#, with: "$1 * (", options: .regularExpression)
+        clean = clean.replacingOccurrences(of: #"\)\s*(\d)"#, with: ") * $1", options: .regularExpression)
+
+        while let closeIdx = clean.firstIndex(of: ")") {
+            let prefix = clean[..<closeIdx]
+            guard let openIdx = prefix.lastIndex(of: "(") else { return nil }
+            let inner = String(clean[clean.index(after: openIdx)..<closeIdx])
+            guard let innerVal = evaluateMathExpression(inner) else { return nil }
+            clean.replaceSubrange(openIdx...closeIdx, with: " \(innerVal) ")
+        }
+        if clean.contains("(") { return nil }
+
+        let pattern = #"[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\+|\-|\*|\/|\^|mod"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let nsRange = NSRange(clean.startIndex..<clean.endIndex, in: clean)
+        let rawTokens: [String] = regex.matches(in: clean, range: nsRange).compactMap {
+            Range($0.range, in: clean).map { String(clean[$0]) }
+        }
+
+        var tokens: [String] = []
+        for tok in rawTokens {
+            if let prev = tokens.last, Double(prev) != nil,
+               (tok.hasPrefix("+") || tok.hasPrefix("-")), tok.count > 1 {
+                tokens.append(String(tok.first!))
+                tokens.append(String(tok.dropFirst()))
+            } else {
+                tokens.append(tok)
+            }
+        }
+
+        guard !tokens.isEmpty else { return nil }
+
+        // 1. Potenzen (^)
+        var i = 0
+        while i < tokens.count {
+            if tokens[i] == "^", i > 0, i + 1 < tokens.count,
+               let lhs = Double(tokens[i - 1]), let rhs = Double(tokens[i + 1]) {
+                tokens.replaceSubrange((i - 1)...(i + 1), with: [String(pow(lhs, rhs))])
+                i = max(0, i - 1)
+            } else {
+                i += 1
+            }
+        }
+
+        // 2. Punkt-Rechnung (*, /, mod)
+        i = 0
+        while i < tokens.count {
+            let op = tokens[i]
+            if ["*", "/", "mod"].contains(op), i > 0, i + 1 < tokens.count,
+               let lhs = Double(tokens[i - 1]), let rhs = Double(tokens[i + 1]) {
+                let res: Double
+                if op == "*" { res = lhs * rhs }
+                else if op == "/" {
+                    guard rhs != 0 else { return nil }
+                    res = lhs / rhs
+                } else {
+                    guard rhs != 0 else { return nil }
+                    res = fmod(lhs, rhs)
+                }
+                tokens.replaceSubrange((i - 1)...(i + 1), with: [String(res)])
+                i = max(0, i - 1)
+            } else {
+                i += 1
+            }
+        }
+
+        // 3. Strich-Rechnung (+, -)
+        guard var acc = Double(tokens[0]) else { return nil }
+        i = 1
+        while i < tokens.count - 1 {
+            let op = tokens[i]
+            guard let rhs = Double(tokens[i + 1]) else { return nil }
+            if op == "+" { acc += rhs }
+            else if op == "-" { acc -= rhs }
+            else { return nil }
+            i += 2
+        }
+        return (i == tokens.count && acc.isFinite) ? acc : nil
+    }
+
+    private func evaluateSequentialExpression(_ expr: String) -> Double? {
+        var clean = expr
+            .replacingOccurrences(of: "\u{202F}", with: "")
+            .replacingOccurrences(of: "\u{2009}", with: "")
+            .replacingOccurrences(of: "\u{200A}", with: "")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: #"(?<=\d)\.(?=\d{3}\b)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: "=", with: "")
+            .trimmingCharacters(in: .whitespaces)
+
+        guard !clean.isEmpty else { return nil }
+
+        while let closeIdx = clean.firstIndex(of: ")") {
+            let prefix = clean[..<closeIdx]
+            guard let openIdx = prefix.lastIndex(of: "(") else { return nil }
+            let inner = String(clean[clean.index(after: openIdx)..<closeIdx])
+            guard let innerResult = evaluateSequentialExpression(inner) else { return nil }
+            clean.replaceSubrange(openIdx...closeIdx, with: " \(innerResult) ")
+        }
+        if clean.contains("(") { return nil }
+
+        let tokens = clean.components(separatedBy: " ").filter { !$0.isEmpty }
+        guard var runningResult = Double(tokens.first ?? "") else { return nil }
+
+        var idx = 1
+        while idx < tokens.count - 1 {
+            let op = tokens[idx]
+            guard let nextVal = Double(tokens[idx + 1]) else { return nil }
+
+            switch op {
+            case "+": runningResult += nextVal
+            case "-": runningResult -= nextVal
+            case "×", "*": runningResult *= nextVal
+            case "÷", "/":
+                guard nextVal != 0 else { return nil }
+                runningResult /= nextVal
+            case "^": runningResult = pow(runningResult, nextVal)
+            case "mod", "%":
+                guard nextVal != 0 else { return nil }
+                runningResult = fmod(runningResult, nextVal)
+            default: return nil
+            }
+            idx += 2
+        }
+        return runningResult.isFinite ? runningResult : nil
     }
     
     private var settingsSheetView: some View {
@@ -493,16 +832,16 @@ struct ContentView: View {
                 }
                 
                 Section(header: Text("Zahlenanzeige & Präzision")) {
-                                    Toggle("Tausendertrennzeichen (1.000)", isOn: $useThousandsSeparator)
-                                    
-                                    Picker("Nachkommastellen", selection: $decimalPrecisionMode) {
-                                        Text("2 Stellen (Kaufmännisch)").tag(2)
-                                        Text("Auto (bis 4 Stellen)").tag(4)
-                                        Text("Präzise (bis 6 Stellen)").tag(6)
-                                        Text("Maximal (bis 8 Stellen)").tag(8)
-                                    }
-                                    .pickerStyle(.menu)
-                                }
+                    Toggle("Tausendertrennzeichen (1.000)", isOn: $useThousandsSeparator)
+                    
+                    Picker("Nachkommastellen", selection: $decimalPrecisionMode) {
+                        Text("2 Stellen (Kaufmännisch)").tag(2)
+                        Text("Auto (bis 4 Stellen)").tag(4)
+                        Text("Präzise (bis 6 Stellen)").tag(6)
+                        Text("Maximal (bis 8 Stellen)").tag(8)
+                    }
+                    .pickerStyle(.menu)
+                }
                 
                 Section(header: Text("Würfel-Einstellungen")) {
                     Picker("Würfel-Typ", selection: $selectedDiceSides) {
@@ -554,6 +893,12 @@ struct ContentView: View {
                         }
                     }
                     .pickerStyle(.menu)
+
+                    Spacer()
+
+                    Text("\(history.count)/\(maxHistoryItems)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
                 }
                 .padding(10)
                 .background(Color(UIColor.secondarySystemBackground))
@@ -597,16 +942,33 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if !history.isEmpty {
-                        Button("Exportieren") {
-                            generateExportData()
-                            showExportAlert = true
+                        HStack(spacing: 12) {
+                            Button("Exportieren") {
+                                generateExportData()
+                                showExportAlert = true
+                            }
+                            .foregroundColor(.blue)
+
+                            Button(role: .destructive) {
+                                showClearHistoryAlert = true
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .foregroundColor(.red)
                         }
-                        .foregroundColor(.blue)
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Fertig") { showHistorySheet = false }
                 }
+            }
+            .alert("Rechenverlauf löschen?", isPresented: $showClearHistoryAlert) {
+                Button("Abbrechen", role: .cancel) {}
+                Button("Alle löschen", role: .destructive) {
+                    history.removeAll()
+                }
+            } message: {
+                Text("Möchtest du wirklich alle \(history.count) Einträge im Rechenverlauf unwiderruflich löschen?")
             }
             .alert(isPresented: $showExportAlert) {
                 Alert(
@@ -780,65 +1142,61 @@ struct ContentView: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 6) {
-                                            Text("Base64 & Hash (MD5 / SHA)").font(.caption).fontWeight(.bold).foregroundColor(.blue)
+                        Text("Base64 & Hash (MD5 / SHA)").font(.caption).fontWeight(.bold).foregroundColor(.blue)
 
-                                            TextField("Text oder Base64 eingeben...", text: $cryptoInputText)
-                                                .font(.system(size: 13, design: .monospaced))
-                                                .textFieldStyle(.roundedBorder)
-                                                .autocorrectionDisabled(true)
-                                                .textInputAutocapitalization(.never)
-                                                .submitLabel(.done)
-                                                .onSubmit { hideKeyboard() }
+                        TextField("Text oder Base64 eingeben...", text: $cryptoInputText)
+                            .font(.system(size: 13, design: .monospaced))
+                            .textFieldStyle(.roundedBorder)
+                            .autocorrectionDisabled(true)
+                            .textInputAutocapitalization(.never)
+                            .submitLabel(.done)
+                            .onSubmit { hideKeyboard() }
 
-                                            HStack(spacing: 6) {
-                                                Button("Base64 Encode") {
-                                                    cryptoInputText = BaseCalculator.encodeBase64(cryptoInputText)
-                                                    base64DecodeError = false
-                                                    hideKeyboard()
-                                                }
-                                                .buttonStyle(.borderedProminent)
-                                                .tint(.blue)
-                                                .font(.caption.bold())
+                        HStack(spacing: 6) {
+                            Button("Base64 Encode") {
+                                cryptoInputText = BaseCalculator.encodeBase64(cryptoInputText)
+                                base64DecodeError = false
+                                hideKeyboard()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.blue)
+                            .font(.caption.bold())
 
-                                                Button("Base64 Decode") {
-                                                    if let decoded = BaseCalculator.decodeBase64(cryptoInputText) {
-                                                        cryptoInputText = decoded
-                                                        base64DecodeError = false
-                                                    } else {
-                                                        base64DecodeError = true
-                                                    }
-                                                    hideKeyboard()
-                                                }
-                                                .buttonStyle(.bordered)
-                                                .font(.caption.bold())
-                                            }
+                            Button("Base64 Decode") {
+                                if let decoded = BaseCalculator.decodeBase64(cryptoInputText) {
+                                    cryptoInputText = decoded
+                                    base64DecodeError = false
+                                } else {
+                                    base64DecodeError = true
+                                }
+                                hideKeyboard()
+                            }
+                            .buttonStyle(.bordered)
+                            .font(.caption.bold())
+                        }
 
-                                            if base64DecodeError {
-                                                Text("Kein gültiges Base64 / UTF-8.")
-                                                    .font(.caption2)
-                                                    .foregroundColor(.red)
-                                            }
+                        if base64DecodeError {
+                            Text("Kein gültiges Base64 / UTF-8.")
+                                .font(.caption2)
+                                .foregroundColor(.red)
+                        }
 
-                                            Picker("Hash", selection: $selectedHashAlgorithm) {
-                                                ForEach(BaseCalculator.HashAlgorithm.allCases) { algo in
-                                                    Text(algo.rawValue).tag(algo)
-                                                }
-                                            }
-                                            .pickerStyle(.segmented)
+                        Picker("Hash", selection: $selectedHashAlgorithm) {
+                            ForEach(BaseCalculator.HashAlgorithm.allCases) { algo in
+                                Text(algo.rawValue).tag(algo)
+                            }
+                        }
+                        .pickerStyle(.segmented)
 
-                                            let digest = BaseCalculator.hash(cryptoInputText, algorithm: selectedHashAlgorithm)
-                                            Text("\(selectedHashAlgorithm.rawValue): \(digest)")
-                                                .font(.system(size: 10, design: .monospaced))
-                                                .foregroundColor(.green)
-                                                .textSelection(.enabled)
-                                                .lineLimit(3)
-                                        }
-                                        .padding(8)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(Color(UIColor.secondarySystemBackground))
-                                        .cornerRadius(8)
-                    
+                        let digest = BaseCalculator.hash(cryptoInputText, algorithm: selectedHashAlgorithm)
+                        Text("\(selectedHashAlgorithm.rawValue): \(digest)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.green)
+                            .textSelection(.enabled)
+                            .lineLimit(3)
+                    }
                     .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(UIColor.secondarySystemBackground))
                     .cornerRadius(8)
                     
@@ -1021,58 +1379,6 @@ struct ContentView: View {
         }
     }
     
-    private func appendDigit(_ digit: String) {
-        if hasEvaluatedResult {
-            displayValue = digit
-            formulaExpression = digit
-            hasEvaluatedResult = false
-            isTypingNewNumber = false
-        } else if isTypingNewNumber {
-            displayValue = digit
-            if !formulaExpression.isEmpty && !formulaExpression.hasSuffix(" ") {
-                let lastChar = String(formulaExpression.suffix(1))
-                if ["+", "-", "×", "÷", "mod", "^"].contains(lastChar) {
-                    formulaExpression += " "
-                }
-            }
-            formulaExpression += digit
-            isTypingNewNumber = false
-        } else {
-            if displayValue == "0" {
-                displayValue = digit
-                if !formulaExpression.isEmpty {
-                    formulaExpression = String(formulaExpression.dropLast()) + digit
-                } else {
-                    formulaExpression = digit
-                }
-            } else {
-                displayValue += digit
-                formulaExpression += digit
-            }
-        }
-        while formulaExpression.contains("  ") {
-            formulaExpression = formulaExpression.replacingOccurrences(of: "  ", with: " ")
-        }
-        formulaDisplay = formulaExpression
-    }
-    
-    private func appendSymbol(_ symbol: String) {
-        if hasEvaluatedResult {
-            formulaExpression = displayValue + " " + symbol + " "
-            hasEvaluatedResult = false
-        } else {
-            let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
-            if !trimmed.isEmpty {
-                formulaExpression = trimmed + " " + symbol + " "
-            } else {
-                formulaExpression = displayValue + " " + symbol + " "
-            }
-        }
-        formulaExpression = formulaExpression.replacingOccurrences(of: "  ", with: " ")
-        formulaDisplay = formulaExpression
-        isTypingNewNumber = true
-    }
-    
     private func appendComma() {
         if hasEvaluatedResult {
             displayValue = "0,"
@@ -1081,29 +1387,17 @@ struct ContentView: View {
             isTypingNewNumber = false
         } else if isTypingNewNumber {
             displayValue = "0,"
-            formulaExpression += "0."
+            let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                formulaExpression = "0."
+            } else {
+                formulaExpression = trimmed + " 0."
+            }
             isTypingNewNumber = false
         } else if !displayValue.contains(",") {
             displayValue += ","
             formulaExpression += "."
         }
-        formulaDisplay = formulaExpression
-    }
-    
-    private func deleteLastChar() {
-        if !displayValue.isEmpty && displayValue != "0" {
-            displayValue.removeLast()
-            if displayValue.isEmpty {
-                displayValue = "0"
-                isTypingNewNumber = true
-            }
-        }
-        
-        if !formulaExpression.isEmpty {
-            formulaExpression.removeLast()
-        }
-        
-        formulaExpression = formulaExpression.replacingOccurrences(of: "  ", with: " ")
         formulaDisplay = formulaExpression
     }
     
@@ -1120,78 +1414,6 @@ struct ContentView: View {
         currentFact = candidates.randomElement() ?? nerdFacts[0]
         showNerdFact = true
     }
-    
-    private func applySmartPercentage() {
-            let cleanDisplay = displayValue
-                .replacingOccurrences(of: ".", with: "")
-                .replacingOccurrences(of: ",", with: ".")
-            guard let current = Double(cleanDisplay) else { return }
-
-            let cleanExpr = formulaExpression
-                .replacingOccurrences(of: ",", with: ".")
-                .trimmingCharacters(in: .whitespaces)
-            let tokens = cleanExpr.components(separatedBy: " ").filter { !$0.isEmpty }
-
-            if useOrderOfOperations {
-                // Math-Modus: Bei + oder - wird X% relativ zur Basis berechnet (100 - 20% = 80)
-                if tokens.count >= 3,
-                   let baseVal = Double(tokens[tokens.count - 3]),
-                   ["+", "-"].contains(tokens[tokens.count - 2]) {
-                    let relativeVal = baseVal * (current / 100.0)
-                    let rawStr = String(relativeVal)
-                    displayValue = formatResult(relativeVal)
-                    var updated = tokens
-                    updated[updated.count - 1] = rawStr
-                    formulaExpression = updated.joined(separator: " ")
-                    formulaDisplay = formulaExpression
-                } else {
-                    let pct = current / 100.0
-                    let rawStr = String(pct)
-                    displayValue = formatResult(pct)
-                    if !tokens.isEmpty {
-                        var updated = tokens
-                        updated[updated.count - 1] = rawStr
-                        formulaExpression = updated.joined(separator: " ")
-                    } else {
-                        formulaExpression = rawStr
-                    }
-                    formulaDisplay = formulaExpression
-                }
-            } else {
-                // Tischrechner-Modus: Sequenzielle Auswertung mit Prozentbezug auf Zwischenwert
-                if tokens.count >= 2, let baseVal = Double(tokens[0]) {
-                    let op = tokens[1]
-                    let pctAmount = baseVal * (current / 100.0)
-                    let res: Double
-                    switch op {
-                    case "+": res = baseVal + pctAmount
-                    case "-": res = baseVal - pctAmount
-                    case "×", "*": res = pctAmount
-                    case "÷", "/":
-                        guard pctAmount != 0 else {
-                            displayValue = "Division durch 0"
-                            isTypingNewNumber = true
-                            return
-                        }
-                        res = baseVal / (current / 100.0)
-                    default:
-                        res = pctAmount
-                    }
-                    let formattedRes = formatResult(res)
-                    displayValue = formattedRes
-                    formulaDisplay = "\(formatResult(baseVal)) \(op) \(formatResult(current))% ="
-                    formulaExpression = String(res)
-                    hasEvaluatedResult = true
-                    isTypingNewNumber = true
-                    appendHistoryItem(expression: "\(formatResult(baseVal)) \(op) \(formatResult(current))%", result: formattedRes)
-                } else {
-                    let pct = current / 100.0
-                    displayValue = formatResult(pct)
-                    formulaExpression = String(pct)
-                    formulaDisplay = formulaExpression
-                }
-            }
-        }
     
     private func applyBitwiseOp(_ op: String) {
         appendSymbol(op)
@@ -1269,6 +1491,9 @@ struct ContentView: View {
             return
         }
         history.append(HistoryItem(expression: expression, result: result))
+        if history.count > maxHistoryItems {
+            history.removeFirst(history.count - maxHistoryItems)
+        }
     }
 
     private func containsHexOrBitwise(_ expr: String) -> Bool {
@@ -1346,153 +1571,13 @@ struct ContentView: View {
     
     private func parseHexOrDec(_ str: String) -> Int64? {
         let clean = str.replacingOccurrences(of: "0x", with: "")
-                    .replacingOccurrences(of: "0X", with: "")
-                    .trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "0X", with: "")
+            .trimmingCharacters(in: .whitespaces)
         if selectedMode == .hexBin || clean.rangeOfCharacter(from: CharacterSet(charactersIn: "ABCDEFabcdef")) != nil {
             return Int64(clean, radix: 16)
         }
         return Int64(clean)
     }
-
-    private func evaluateMathExpression(_ expr: String) -> Double? {
-        let rawExpr = expr
-            .replacingOccurrences(of: "\u{202F}", with: "")
-            .replacingOccurrences(of: "\u{2009}", with: "")
-            .replacingOccurrences(of: "\u{200A}", with: "")
-            .replacingOccurrences(of: "'", with: "")
-            .replacingOccurrences(of: #"(?<=\d)\.(?=\d{3}\b)"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: " ", with: "")
-        
-        var clean = rawExpr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
-        
-        while clean.hasPrefix("×") || clean.hasPrefix("÷") || clean.hasPrefix("*") || clean.hasPrefix("/") || clean.hasPrefix("%") {
-            clean = String(clean.dropFirst()).trimmingCharacters(in: .whitespaces)
-        }
-        
-        guard !clean.isEmpty else { return nil }
-        
-        if clean.contains("^") {
-            let parts = clean.components(separatedBy: "^")
-            if parts.count == 2 {
-                let cleanBase = parts[0].trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
-                let cleanExp = parts[1].trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
-                if let base = Double(cleanBase), let exp = Double(cleanExp) {
-                    return pow(base, exp)
-                }
-            }
-        }
-        
-        if containsHexOrBitwise(clean) {
-            if let bitRes = evaluateBitwiseExpression(clean) {
-                return Double(bitRes)
-            }
-            return nil
-        }
-        
-        if clean.contains("mod") || clean.contains("%") {
-            let modSymbol = clean.contains("mod") ? "mod" : "%"
-            let parts = clean.components(separatedBy: " \(modSymbol) ")
-            if parts.count == 2 {
-                if let leftVal = evaluateMathExpression(parts[0]), let rightVal = evaluateMathExpression(parts[1]), rightVal != 0 {
-                    return fmod(leftVal, rightVal)
-                }
-                return nil
-            }
-        }
-
-        var formatted = clean
-            .replacingOccurrences(of: "×", with: "*")
-            .replacingOccurrences(of: "÷", with: "/")
-                
-        formatted = formatted.replacingOccurrences(
-            of: #"(\d|\))\s*\("#,
-            with: "$1 * (",
-            options: .regularExpression
-        )
-        formatted = formatted.replacingOccurrences(
-            of: #"\)\s*(\d)"#,
-            with: ") * $1",
-            options: .regularExpression
-        )
-                
-        var parenBalance = 0
-        for char in formatted {
-            if char == "(" { parenBalance += 1 }
-            else if char == ")" { parenBalance -= 1 }
-            if parenBalance < 0 { return nil }
-        }
-        if parenBalance != 0 { return nil }
-                
-        let compact = formatted.replacingOccurrences(of: " ", with: "")
-        if compact.isEmpty || compact.contains("()") || compact.contains("**") || compact.contains("//") || compact.contains("++") || compact.contains("--") {
-            return nil
-        }
-   
-        if let last = compact.last, ["+", "-", "*", "/", "."].contains(String(last)) {
-                    return nil
-                }
-        
-        formatted = formatted.replacingOccurrences(
-            of: #"(?<![\d.])(\d+)(?![\d.])"#,
-            with: "$1.0",
-            options: .regularExpression
-        )
-                
-        let parsedExpr = NSExpression(format: formatted)
-        if let result = parsedExpr.expressionValue(with: nil, context: nil) as? NSNumber {
-            let val = result.doubleValue
-            return val.isFinite ? val : nil
-        }
-                
-        return nil
-    }
-    
-    private func evaluateSequentialExpression(_ expr: String) -> Double? {
-            let rawExpr = expr
-                .replacingOccurrences(of: "\u{202F}", with: "")
-                .replacingOccurrences(of: "\u{2009}", with: "")
-                .replacingOccurrences(of: "\u{200A}", with: "")
-                .replacingOccurrences(of: "'", with: "")
-                .replacingOccurrences(of: #"(?<=\d)\.(?=\d{3}\b)"#, with: "", options: .regularExpression)
-                // Wichtig: KEIN .replacingOccurrences(of: " ", with: "") hier,
-                // da der Tischrechner die Leerzeichen für die Token-Trennung braucht!
-
-            var clean = rawExpr.replacingOccurrences(of: "=", with: "").trimmingCharacters(in: .whitespaces)
-            
-            while let rangeOfOpen = clean.range(of: "("), let rangeOfClose = clean.range(of: ")") {
-                let innerExpr = String(clean[rangeOfOpen.upperBound..<rangeOfClose.lowerBound])
-                if let innerResult = evaluateSequentialExpression(innerExpr) {
-                    clean.replaceSubrange(rangeOfOpen.lowerBound...rangeOfClose.upperBound, with: "\(innerResult)")
-                } else {
-                    break
-                }
-            }
-            
-            let tokens = clean.components(separatedBy: " ").filter { !$0.isEmpty }
-            guard var runningResult = Double(tokens.first ?? "") else { return nil }
-            
-            var idx = 1
-            while idx < tokens.count - 1 {
-                let op = tokens[idx]
-                guard let nextVal = Double(tokens[idx + 1]) else { break }
-                
-                switch op {
-                case "+": runningResult += nextVal
-                case "-": runningResult -= nextVal
-                case "×", "*": runningResult *= nextVal
-                case "÷", "/":
-                    if nextVal == 0 { return nil }
-                    runningResult /= nextVal
-                case "^": runningResult = pow(runningResult, nextVal)
-                case "mod", "%":
-                    if nextVal == 0 { return nil }
-                    runningResult = fmod(runningResult, nextVal)
-                default: break
-                }
-                idx += 2
-            }
-            return runningResult
-        }
     
     private func applyScientificFunc(_ function: String) {
         guard let val = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
@@ -1527,14 +1612,15 @@ struct ContentView: View {
             res = factorial(Int(val))
         case "log2":
             guard let r = ScientificCalculator.log2Value(val) else {
-            displayValue = "Ungültiger Wert"; isTypingNewNumber = true; return
+                displayValue = "Ungültiger Wert"; isTypingNewNumber = true; return
             }
             res = r
         case "exp":
             guard let r = ScientificCalculator.expValue(val) else {
-            displayValue = "Ungültiger Wert"; isTypingNewNumber = true; return
+                displayValue = "Ungültiger Wert"; isTypingNewNumber = true; return
             }
-            res = r        default: break
+            res = r
+        default: break
         }
         
         let exprStr = "\(function)(\(formatResult(val)))"
@@ -1548,25 +1634,24 @@ struct ContentView: View {
     }
     
     private func applyDeltaPercent() {
-            guard let current = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
-            let tokens = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
+        guard let current = Double(displayValue.replacingOccurrences(of: ",", with: ".")) else { return }
+        let tokens = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
 
-            // Wenn in formulaExpression ein vorheriger Wert steht (z. B. "80 + 100" oder "80"), nutze den ersten Wert als Basis
-            if let firstToken = tokens.first, let base = Double(firstToken), tokens.count >= 2 {
-                guard let pctChange = ScientificCalculator.deltaPercent(from: base, to: current) else {
-                    displayValue = "Ungültiger Wert"
-                    isTypingNewNumber = true
-                    return
-                }
-                let formatted = formatResult(pctChange)
-                displayValue = formatted
-                formulaDisplay = "Δ% (\(formatResult(base)) → \(formatResult(current))) ="
-                formulaExpression = String(pctChange)
-                hasEvaluatedResult = true
+        if let firstToken = tokens.first, let base = Double(firstToken), tokens.count >= 2 {
+            guard let pctChange = ScientificCalculator.deltaPercent(from: base, to: current) else {
+                displayValue = "Ungültiger Wert"
                 isTypingNewNumber = true
-                appendHistoryItem(expression: "Δ% (\(formatResult(base)) → \(formatResult(current)))", result: formatted)
+                return
             }
+            let formatted = formatResult(pctChange)
+            displayValue = formatted
+            formulaDisplay = "Δ% (\(formatResult(base)) → \(formatResult(current))) ="
+            formulaExpression = String(pctChange)
+            hasEvaluatedResult = true
+            isTypingNewNumber = true
+            appendHistoryItem(expression: "Δ% (\(formatResult(base)) → \(formatResult(current)))", result: formatted)
         }
+    }
     
     private func factorial(_ n: Int) -> Double {
         guard n >= 0 else { return 0 }
@@ -1577,67 +1662,66 @@ struct ContentView: View {
     }
     
     private func memoryClear() {
-            memoryValue = 0.0
-            hasMemory = false
-        }
+        memoryValue = 0.0
+        hasMemory = false
+    }
 
-        private func memoryRecall() {
-            guard hasMemory, memoryValue.isFinite else { return }
-            let formatted = formatResult(memoryValue)
-            let rawStr = String(memoryValue)
-            displayValue = formatted
+    private func memoryRecall() {
+        guard hasMemory, memoryValue.isFinite else { return }
+        let formatted = formatResult(memoryValue)
+        let rawStr = String(memoryValue)
+        displayValue = formatted
 
-            if hasEvaluatedResult || formulaExpression.trimmingCharacters(in: .whitespaces).isEmpty {
-                formulaExpression = rawStr
-                hasEvaluatedResult = false
+        if hasEvaluatedResult || formulaExpression.trimmingCharacters(in: .whitespaces).isEmpty {
+            formulaExpression = rawStr
+            hasEvaluatedResult = false
+        } else {
+            let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
+            if let lastChar = trimmed.last, ["+", "-", "×", "÷", "^", "("].contains(String(lastChar)) || trimmed.hasSuffix("mod") {
+                formulaExpression = trimmed + " " + rawStr
             } else {
-                let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
-                if let lastChar = trimmed.last, ["+", "-", "×", "÷", "^"].contains(String(lastChar)) || trimmed.hasSuffix("mod") {
-                    formulaExpression = trimmed + " " + rawStr
+                var tokens = trimmed.components(separatedBy: " ").filter { !$0.isEmpty }
+                if !tokens.isEmpty {
+                    tokens[tokens.count - 1] = rawStr
+                    formulaExpression = tokens.joined(separator: " ")
                 } else {
-                    // Ersetzt den letzten Operanden sauber durch den Speicherwert
-                    var tokens = trimmed.components(separatedBy: " ").filter { !$0.isEmpty }
-                    if !tokens.isEmpty {
-                        tokens[tokens.count - 1] = rawStr
-                        formulaExpression = tokens.joined(separator: " ")
-                    } else {
-                        formulaExpression = rawStr
-                    }
+                    formulaExpression = rawStr
                 }
             }
-            formulaDisplay = formulaExpression
+        }
+        formulaDisplay = formulaExpression
+        isTypingNewNumber = true
+    }
+
+    private func memoryAdd() {
+        let clean = displayValue.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+        if let val = Double(clean), val.isFinite {
+            memoryValue += val
+            hasMemory = true
             isTypingNewNumber = true
         }
+    }
 
-        private func memoryAdd() {
-            let clean = displayValue.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
-            if let val = Double(clean), val.isFinite {
-                memoryValue += val
-                hasMemory = true
-                isTypingNewNumber = true
-            }
+    private func memorySub() {
+        let clean = displayValue.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+        if let val = Double(clean), val.isFinite {
+            memoryValue -= val
+            hasMemory = true
+            isTypingNewNumber = true
         }
-
-        private func memorySub() {
-            let clean = displayValue.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
-            if let val = Double(clean), val.isFinite {
-                memoryValue -= val
-                hasMemory = true
-                isTypingNewNumber = true
-            }
-        }
+    }
     
     private func formatResult(_ val: Double) -> String {
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .decimal
-            formatter.locale = Locale(identifier: "de_DE")
-            formatter.minimumFractionDigits = (decimalPrecisionMode == 2) ? 2 : 0
-            formatter.maximumFractionDigits = decimalPrecisionMode
-            formatter.usesGroupingSeparator = useThousandsSeparator
-            formatter.groupingSeparator = "."
-            
-            return formatter.string(from: NSNumber(value: val)) ?? "\(val)"
-        }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "de_DE")
+        formatter.minimumFractionDigits = (decimalPrecisionMode == 2) ? 2 : 0
+        formatter.maximumFractionDigits = decimalPrecisionMode
+        formatter.usesGroupingSeparator = useThousandsSeparator
+        formatter.groupingSeparator = "."
+        
+        return formatter.string(from: NSNumber(value: val)) ?? "\(val)"
+    }
     
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)

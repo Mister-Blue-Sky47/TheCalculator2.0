@@ -15,22 +15,30 @@ struct UnitCalculator {
     }
     
     // MARK: - Aktuelle Wechselkurse (wird dynamisch aktualisiert, mit Fallback)
+    static let historicRatesToEUR: [String: Double] = [
+        "DEM": 1.95583,   // Fester Euro-Umrechnungskurs: 1 EUR = 1,95583 DEM
+        "DDR": 3.91166    // 2:1-Bezug zur DEM (2 * 1,95583 = 3,91166 Mark der DDR je 1 EUR)
+    ]
+
     static var liveRatesToEUR: [String: Double] = [
         "EUR": 1.0,
         "USD": 1.08,
         "GBP": 0.85,
         "CHF": 0.95,
-        "CNY": 7.85, // Chinesischer Yuan neu hinzugefügt
-        "JPY": 162.5, // Japanischer Yen neu hinzugefügt
+        "CNY": 7.85,
+        "JPY": 162.5,
         "PLN": 4.32,
         "CZK": 25.20,
-        "DKK": 7.46
+        "DKK": 7.46,
+        "DEM": 1.95583,
+        "DDR": 3.91166
     ]
-    
-    // Asynchroner Fetch für tagesaktuelle Kurse (z.B. über EZB Referenzraten)
+        
+    static var lastRateUpdateText: String = "Fallback-Kurse (offline)"
+        
     static func updateLiveRates(completion: @escaping (Bool) -> Void) {
         guard let url = URL(string: "https://open.er-api.com/v6/latest/EUR") else {
-            completion(false)
+            DispatchQueue.main.async { completion(false) }
             return
         }
         
@@ -43,11 +51,20 @@ struct UnitCalculator {
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let rates = json["rates"] as? [String: Double] {
+                    let formatter = DateFormatter()
+                    formatter.locale = Locale(identifier: "de_DE")
+                    formatter.dateStyle = .short
+                    formatter.timeStyle = .short
+                    let stamp = formatter.string(from: Date())
+                    
                     DispatchQueue.main.async {
-                        // Aktualisiere das Dictionary mit Live-Daten
                         for (key, value) in rates {
                             liveRatesToEUR[key] = value
                         }
+                        for (code, rate) in historicRatesToEUR {
+                            liveRatesToEUR[code] = rate
+                        }
+                        lastRateUpdateText = "Stand: \(stamp)"
                         completion(true)
                     }
                 } else {

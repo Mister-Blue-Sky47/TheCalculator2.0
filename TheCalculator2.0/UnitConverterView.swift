@@ -16,8 +16,11 @@ struct UnitConverterView: View {
     
     @State private var isUpdatingRates: Bool = false
     @State private var updateMessage: String? = nil
+    @State private var ratesRevision: Int = 0
+    @State private var rateStatusText: String = UnitCalculator.lastRateUpdateText
     
     var convertedValue: String {
+        let _ = ratesRevision
         guard let val = Double(inputValue.replacingOccurrences(of: ",", with: ".")) else { return "0" }
         
         switch selectedCategory {
@@ -54,7 +57,7 @@ struct UnitConverterView: View {
                     }
                     .pickerStyle(.menu)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .onChange(of: selectedCategory) { _ in
+                    .onChange(of: selectedCategory) { _, _ in
                         isInputFocused = false
                         resetUnitsForCategory()
                     }
@@ -65,27 +68,36 @@ struct UnitConverterView: View {
                 
                 // Extra-Button für Währungskurse aktualisieren
                 if selectedCategory == .currency {
-                    HStack {
-                        Button(action: fetchLiveExchangeRates) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.clockwise.circle.fill")
-                                Text(isUpdatingRates ? "Lade Kurse..." : "Tagesaktuelle Kurse laden")
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Button(action: fetchLiveExchangeRates) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.clockwise.circle.fill")
+                                    Text(isUpdatingRates ? "Lade Kurse..." : "Tagesaktuelle Kurse laden")
+                                }
+                                .font(.caption)
+                                .fontWeight(.semibold)
                             }
-                            .font(.caption)
-                            .fontWeight(.semibold)
+                            .buttonStyle(.borderedProminent)
+                            .tint(.blue.opacity(0.15))
+                            .foregroundColor(.blue)
+                            .disabled(isUpdatingRates)
+                            
+                            if let msg = updateMessage {
+                                Text(msg)
+                                    .font(.caption2)
+                                    .foregroundColor(msg.contains("Fehler") ? .orange : .green)
+                            }
+                            Spacer()
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue.opacity(0.15))
-                        .foregroundColor(.blue)
-                        .disabled(isUpdatingRates)
                         
-                        if let msg = updateMessage {
-                            Text(msg)
-                                .font(.caption2)
-                                .foregroundColor(.green)
-                        }
-                        Spacer()
+                        Text(rateStatusText)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
+                    .padding()
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(12)
                 }
                 
                 // 2. Wert-Eingabe
@@ -261,7 +273,9 @@ struct UnitConverterView: View {
                 "JPY (¥ - Japan)",
                 "PLN (zł)",
                 "CZK (Kč)",
-                "DKK (kr.)"
+                "DKK (kr.)",
+                "DEM (DM - historisch)",
+                "DDR (Mark der DDR - historisch)"
             ]
         }
     }
@@ -271,11 +285,12 @@ struct UnitConverterView: View {
         updateMessage = nil
         UnitCalculator.updateLiveRates { success in
             isUpdatingRates = false
+            rateStatusText = UnitCalculator.lastRateUpdateText
             if success {
-                updateMessage = "Aktualisiert!"
-                inputValue = String(inputValue)
+                ratesRevision += 1
+                updateMessage = "Kurse aktualisiert"
             } else {
-                updateMessage = "Fehler (Offline)"
+                updateMessage = "Fehler – Fallback aktiv"
             }
         }
     }

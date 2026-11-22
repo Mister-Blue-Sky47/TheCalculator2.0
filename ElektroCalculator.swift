@@ -119,6 +119,57 @@ struct ElektroCalculator {
         let p: Double
     }
     
+    struct PowerTriangleResult {
+            let activePowerW: Double      // Wirkleistung P in W
+            let apparentPowerVA: Double   // Scheinleistung S in VA
+            let reactivePowerVar: Double  // Blindleistung Q in var
+            let powerFactor: Double       // Leistungsfaktor cos(phi)
+        }
+
+        struct EfficiencyPowerResult {
+            let inputPowerW: Double       // Zugeführte Leistung P_zu in W
+            let usefulPowerW: Double      // Nutzleistung P_ab in W
+            let lossPowerW: Double        // Verlustleistung P_V in W
+            let efficiencyPercent: Double // Wirkungsgrad eta in %
+        }
+
+        // Berechnet P, S, Q aus U, I und cos(phi) (Standard: cos(phi) = 1.0, falls nicht angegeben)
+        static func calculatePowerTriangle(voltageU: Double?, currentI: Double?, cosPhi: Double?) -> PowerTriangleResult? {
+            let pf = max(0.0, min(1.0, cosPhi ?? 1.0))
+            let sinPhi = sqrt(max(0.0, 1.0 - pf * pf))
+
+            if let u = voltageU, let i = currentI {
+                let s = u * i
+                let p = s * pf
+                let q = s * sinPhi
+                return PowerTriangleResult(activePowerW: p, apparentPowerVA: s, reactivePowerVar: q, powerFactor: pf)
+            }
+            return nil
+        }
+
+        // Berechnet Nutzleistung P_ab, Verlustleistung P_V und Wirkungsgrad
+        static func calculateUsefulAndLossPower(inputPowerW: Double?, usefulPowerW: Double?, lossPowerW: Double?) -> EfficiencyPowerResult? {
+            if let pZu = inputPowerW, pZu > 0 {
+                if let pAb = usefulPowerW {
+                    let clampedAb = max(0.0, min(pZu, pAb))
+                    let pVerlust = pZu - clampedAb
+                    let etaPct = (clampedAb / pZu) * 100.0
+                    return EfficiencyPowerResult(inputPowerW: pZu, usefulPowerW: clampedAb, lossPowerW: pVerlust, efficiencyPercent: etaPct)
+                } else if let pVerlust = lossPowerW {
+                    let clampedLoss = max(0.0, min(pZu, pVerlust))
+                    let pAb = pZu - clampedLoss
+                    let etaPct = (pAb / pZu) * 100.0
+                    return EfficiencyPowerResult(inputPowerW: pZu, usefulPowerW: pAb, lossPowerW: clampedLoss, efficiencyPercent: etaPct)
+                }
+            } else if let pAb = usefulPowerW, let pVerlust = lossPowerW {
+                let pZu = pAb + pVerlust
+                guard pZu > 0 else { return nil }
+                let etaPct = (pAb / pZu) * 100.0
+                return EfficiencyPowerResult(inputPowerW: pZu, usefulPowerW: pAb, lossPowerW: pVerlust, efficiencyPercent: etaPct)
+            }
+            return nil
+        }
+    
     static func calculateOhmsLaw(u: Double?, i: Double?, r: Double?, p: Double?) -> OhmsLawResult? {
         if let u = u, let i = i, i != 0 {
             return OhmsLawResult(u: u, i: i, r: u / i, p: u * i)
