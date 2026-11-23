@@ -550,25 +550,28 @@ struct ContentView: View {
     }
 
     private func appendSymbol(_ symbol: String) {
-        let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
-        if hasEvaluatedResult {
-            formulaExpression = displayValue + " " + symbol
-            hasEvaluatedResult = false
-        } else if symbol == "(" {
-            if trimmed.isEmpty || trimmed == "0" {
-                formulaExpression = "("
+            let trimmed = formulaExpression.trimmingCharacters(in: .whitespaces)
+            if hasEvaluatedResult {
+                let baseExpr = (!trimmed.isEmpty && Double(trimmed.replacingOccurrences(of: ",", with: ".")) != nil)
+                    ? trimmed
+                    : displayValue
+                formulaExpression = baseExpr + " " + symbol
+                hasEvaluatedResult = false
+            } else if symbol == "(" {
+                if trimmed.isEmpty || trimmed == "0" {
+                    formulaExpression = "("
+                } else {
+                    formulaExpression = trimmed + " ("
+                }
+            } else if !trimmed.isEmpty {
+                formulaExpression = trimmed + " " + symbol
             } else {
-                formulaExpression = trimmed + " ("
+                formulaExpression = displayValue + " " + symbol
             }
-        } else if !trimmed.isEmpty {
-            formulaExpression = trimmed + " " + symbol
-        } else {
-            formulaExpression = displayValue + " " + symbol
+            formulaExpression = formulaExpression.replacingOccurrences(of: "  ", with: " ")
+            formulaDisplay = formulaExpression
+            isTypingNewNumber = true
         }
-        formulaExpression = formulaExpression.replacingOccurrences(of: "  ", with: " ")
-        formulaDisplay = formulaExpression
-        isTypingNewNumber = true
-    }
 
     private func deleteLastChar() {
         if hasEvaluatedResult {
@@ -1367,17 +1370,30 @@ struct ContentView: View {
     }
     
     private func swapOperands() {
-        let tokens = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
-        if tokens.count == 3 {
-            let left = tokens[0]
-            let op = tokens[1]
-            let right = tokens[2]
+            var tokens = formulaExpression.components(separatedBy: " ").filter { !$0.isEmpty }
+            // Indizes aller numerischen Operanden von vorne nach hinten sammeln
+            let numericIndices = tokens.indices.filter { idx in
+                let normalized = tokens[idx].replacingOccurrences(of: ",", with: ".")
+                return Double(normalized) != nil
+            }
             
-            formulaExpression = "\(right) \(op) \(left)"
+            guard numericIndices.count >= 2 else { return }
+            
+            let secondLastIdx = numericIndices[numericIndices.count - 2]
+            let lastIdx = numericIndices[numericIndices.count - 1]
+            
+            tokens.swapAt(secondLastIdx, lastIdx)
+            formulaExpression = tokens.joined(separator: " ")
             formulaDisplay = formulaExpression
-            displayValue = right
+            
+            if let lastVal = Double(tokens[lastIdx].replacingOccurrences(of: ",", with: ".")) {
+                displayValue = formatResult(lastVal)
+            } else {
+                displayValue = tokens[lastIdx]
+            }
+            hasEvaluatedResult = false
+            isTypingNewNumber = true
         }
-    }
     
     private func appendComma() {
         if hasEvaluatedResult {
@@ -1497,24 +1513,35 @@ struct ContentView: View {
     }
 
     private func containsHexOrBitwise(_ expr: String) -> Bool {
-        let pureBitwiseOps = ["&", "|", "<<", ">>"]
-        let hexChars = ["A", "B", "C", "D", "E", "F"]
-        
-        if pureBitwiseOps.contains(where: { expr.contains($0) }) || hexChars.contains(where: { expr.contains($0) }) {
-            return true
-        }
-        
-        if expr.contains("^") {
-            let tokens = expr.components(separatedBy: " ").filter { !$0.isEmpty }
-            for token in tokens {
-                if hexChars.contains(where: { token.contains($0) }) {
-                    return true
+            let pureBitwiseOps = ["&", "|", "<<", ">>"]
+            if pureBitwiseOps.contains(where: { expr.contains($0) }) {
+                return true
+            }
+            
+            // Entferne gültige wissenschaftliche Exponenten (z. B. 6.6743e-11 oder 6.022E+23),
+            // damit das 'E' nicht fälschlich als Hexadezimalziffer erkannt wird.
+            let withoutSciNotation = expr.replacingOccurrences(
+                of: #"\b\d+(?:\.\d+)?[eE][+-]?\d+\b"#,
+                with: "",
+                options: .regularExpression
+            )
+            
+            let hexChars = ["A", "B", "C", "D", "E", "F"]
+            if hexChars.contains(where: { withoutSciNotation.contains($0) }) {
+                return true
+            }
+            
+            if withoutSciNotation.contains("^") {
+                let tokens = withoutSciNotation.components(separatedBy: " ").filter { !$0.isEmpty }
+                for token in tokens {
+                    if hexChars.contains(where: { token.contains($0) }) {
+                        return true
+                    }
                 }
             }
+            
+            return false
         }
-        
-        return false
-    }
     
     private func evaluateBitwiseExpression(_ expr: String) -> Int64? {
         let trimmed = expr.trimmingCharacters(in: .whitespaces)
@@ -1712,16 +1739,20 @@ struct ContentView: View {
     }
     
     private func formatResult(_ val: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.locale = Locale(identifier: "de_DE")
-        formatter.minimumFractionDigits = (decimalPrecisionMode == 2) ? 2 : 0
-        formatter.maximumFractionDigits = decimalPrecisionMode
-        formatter.usesGroupingSeparator = useThousandsSeparator
-        formatter.groupingSeparator = "."
-        
-        return formatter.string(from: NSNumber(value: val)) ?? "\(val)"
-    }
+            if val != 0 && (abs(val) < 1e-4 || abs(val) >= 1e12) {
+                return String(format: "%.6e", val).replacingOccurrences(of: ".", with: ",")
+            }
+            
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.locale = Locale(identifier: "de_DE")
+            formatter.minimumFractionDigits = (decimalPrecisionMode == 2) ? 2 : 0
+            formatter.maximumFractionDigits = decimalPrecisionMode
+            formatter.usesGroupingSeparator = useThousandsSeparator
+            formatter.groupingSeparator = "."
+            
+            return formatter.string(from: NSNumber(value: val)) ?? "\(val)"
+        }
     
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)

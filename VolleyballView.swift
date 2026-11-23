@@ -16,6 +16,14 @@ private enum VolleyballSheet: Identifiable {
     var id: Self { self }
 }
 
+private enum ScheduleGroupingMode: String, CaseIterable, Identifiable {
+    case chronological = "Chronologisch"
+    case byCourtThenGroup = "Spielfeld → Gruppe"
+    case byGroup = "Nach Gruppe"
+
+    var id: String { rawValue }
+}
+
 struct VolleyballView: View {
     @EnvironmentObject private var store: VolleyballTournamentStore
     @Environment(\.scenePhase) private var scenePhase
@@ -23,6 +31,8 @@ struct VolleyballView: View {
     @State private var activeSheet: VolleyballSheet?
     @State private var showEndTournamentAlert = false
     @State private var exportedBracketImage: UIImage?
+    @State private var scheduleGrouping: ScheduleGroupingMode = .byCourtThenGroup
+    @State private var editingMatchIndex: Int?
     @FocusState private var isInputFocused: Bool
 
     var body: some View {
@@ -86,6 +96,7 @@ struct VolleyballView: View {
                     .font(.headline)
 
                 Button {
+                    store.clearBuzzerDisplay()
                     activeSheet = .buzzer
                 } label: {
                     Label("Buzzer", systemImage: "bell.badge.fill")
@@ -130,6 +141,22 @@ struct VolleyballView: View {
 
     private var setupCard: some View {
         VStack(alignment: .leading, spacing: 14) {
+            Picker("Turnier-System", selection: $store.formatMode) {
+                ForEach(TournamentFormatMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+
+            if store.formatMode == .rallyeCompact {
+                Stepper("Rallye-Runden pro Team: \(store.rallyeRoundsCount)",
+                        value: $store.rallyeRoundsCount,
+                        in: 2...12)
+                Text("Ideal bei vielen Teams (z. B. 26–36): Jedes Team spielt \(store.rallyeRoundsCount) Runden gegen tabellarisch passende Gegner statt endloser Gruppenspiele.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             Stepper("Anzahl Teams: \(store.teamCount)", value: $store.teamCount, in: 3...36)
 
             Stepper("Anzahl Gruppen: \(store.groupCount == 0 ? "0 (Offen)" : "\(store.groupCount)")",
@@ -140,12 +167,41 @@ struct VolleyballView: View {
                     value: $store.courtCount,
                     in: 1...store.maxAllowedCourts)
 
-            if store.groupCount >= 1 {
-                Toggle("Gruppen zufällig auslosen", isOn: $store.randomizeInitialGroups)
-                    .font(.subheadline)
+            if store.tournamentTeamDraws.count == store.teamCount {
+                HStack {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundColor(.green)
+                    Text("Buzzer-Auslosung für \(store.teamCount) Teams (Gruppen & Felder) aktiv!")
+                        .font(.caption.bold())
+                        .foregroundColor(.green)
+                    Spacer()
+                    Button("Zurücksetzen") {
+                        store.resetTournamentTeamDraw()
+                    }
+                    .font(.caption2)
+                }
+                .padding(8)
+                .background(Color.green.opacity(0.12))
+                .cornerRadius(8)
+            } else {
+                if store.groupCount >= 1 {
+                    Toggle("Gruppen zufällig auslosen", isOn: $store.randomizeInitialGroups)
+                        .font(.subheadline)
+                }
+
+                Button {
+                    store.buzzerCategory = .tournamentTeams
+                    store.clearBuzzerDisplay()
+                    activeSheet = .buzzer
+                } label: {
+                    Label("Teams live per Buzzer auf Gruppen & Felder losen", systemImage: "bell.badge.fill")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
             }
 
-            if store.groupCount >= 2 {
+            if store.formatMode == .classicRoundRobin && store.groupCount >= 2 {
                 Toggle("Runde 2 mit Über-Kreuz- / Snake-Setzung", isOn: $store.enableCrossSeedRound2)
                     .font(.subheadline)
             }
@@ -172,12 +228,15 @@ struct VolleyballView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             } else {
-                Stepper("Spieldauer: \(store.matchDurationMinutes) Min.", value: $store.matchDurationMinutes, in: 1...30)
+                Stepper("Gesamtspieldauer: \(store.matchDurationMinutes) Min.", value: $store.matchDurationMinutes, in: 2...30)
+
+                Toggle("Halbzeit-Wechsel bei \(store.matchDurationMinutes / 2) Min. (Pause + Buzzer)", isOn: $store.enableHalftimeSwitch)
+                    .font(.subheadline)
             }
 
             Divider()
 
-            Text("Team-Namen (optional anpassbar):")
+            Text("Team-Namen (werden auch im Buzzer übernommen):")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
 
@@ -220,6 +279,20 @@ struct VolleyballView: View {
                 Text("\(store.matches.filter { $0.isFinished }.count)/\(store.matches.count) Spiele • \(store.courtCount) Feld\(store.courtCount == 1 ? "" : "er")")
                     .font(.caption)
                     .foregroundColor(.secondary)
+            }
+
+            if store.canGenerateNextRallyeRound {
+                let nextRound = (store.matches.map { $0.roundNumber }.max() ?? 1) + 1
+                Button {
+                    store.startNextRallyeRound()
+                } label: {
+                    Label("Rallye-Runde \(nextRound) von \(store.rallyeRoundsCount) generieren", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.subheadline.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
             }
 
             if store.canAdvanceToRound2 {
@@ -340,23 +413,37 @@ struct VolleyballView: View {
 
                     if store.isTimeMode {
                         VStack(spacing: 6) {
-                            Text("SPIELZEIT-COUNTDOWN")
+                            Text("SPIELZEIT-COUNTDOWN (\(store.matchDurationMinutes) MIN.)")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
 
                             Text(store.timeFormatted(store.remainingSeconds))
                                 .font(.system(size: 36, weight: .bold, design: .monospaced))
-                                .foregroundColor(.orange)
+                                .foregroundColor(store.isHalftimePaused ? .red : .orange)
+
+                            if store.isHalftimePaused {
+                                Text("HALBZEIT – Seitenwechsel! Danach Wiederanpfiff für die 2. Hälfte.")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.red)
+                                    .multilineTextAlignment(.center)
+                            } else if store.remainingSeconds == 0 {
+                                Text("SPIELZEIT ABGELAUFEN!")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.red)
+                            }
 
                             HStack(spacing: 12) {
-                                Button(store.timerActive ? "Pause" : "Start") {
+                                Button(store.timerActive ? "Pause" : (store.isHalftimePaused ? "2. Hälfte anpfeifen" : "Start")) {
                                     store.timerActive ? store.stopTimer() : store.startTimer()
                                 }
                                 .buttonStyle(.borderedProminent)
+                                .tint(store.isHalftimePaused ? .green : .blue)
 
                                 Button("Reset") {
                                     store.stopTimer()
                                     store.remainingSeconds = store.matchDurationMinutes * 60
+                                    store.halftimeTriggeredForCurrentMatch = false
+                                    store.isHalftimePaused = false
                                 }
                                 .buttonStyle(.bordered)
                             }
@@ -375,6 +462,7 @@ struct VolleyballView: View {
                             title: tA.name,
                             points: store.currentSetPointsA,
                             color: .blue,
+                            plusDisabled: currentMatch.isFinished || store.isSetScoreLocked,
                             onPlus: { store.currentSetPointsA += 1 },
                             onMinus: { if store.currentSetPointsA > 0 { store.currentSetPointsA -= 1 } }
                         )
@@ -385,6 +473,7 @@ struct VolleyballView: View {
                             title: tB.name,
                             points: store.currentSetPointsB,
                             color: .green,
+                            plusDisabled: currentMatch.isFinished || store.isSetScoreLocked,
                             onPlus: { store.currentSetPointsB += 1 },
                             onMinus: { if store.currentSetPointsB > 0 { store.currentSetPointsB -= 1 } }
                         )
@@ -393,15 +482,43 @@ struct VolleyballView: View {
                     .background(Color(.systemGray6))
                     .cornerRadius(12)
 
-                    Button(store.isTimeMode ? "Spielstand speichern / beenden" : "Aktuellen Satz beenden") {
-                        store.finishCurrentSet()
+                    if !store.isTimeMode && !currentMatch.isFinished && store.isSetValidToFinish {
+                        HStack {
+                            Image(systemName: "lock.fill")
+                                .foregroundColor(.orange)
+                            Text("Satzende erreicht (\(store.targetPointsToWinSet)+ Pkt. & ≥2 Vorsprung).")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Toggle("Sperre lösen", isOn: $store.overrideScoreLock)
+                                .labelsHidden()
+                                .scaleEffect(0.8)
+                        }
+                        .padding(.horizontal, 6)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.indigo)
-                    .disabled(currentMatch.isFinished || (!store.isTimeMode && !store.isSetValidToFinish))
+
+                    HStack(spacing: 10) {
+                        Button(store.isTimeMode ? "Spielstand speichern / beenden" : "Aktuellen Satz beenden") {
+                            store.finishCurrentSet()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.indigo)
+                        .disabled(currentMatch.isFinished || (!store.isTimeMode && !store.isSetValidToFinish))
+
+                        if currentMatch.isFinished || !store.setHistory.isEmpty {
+                            Button {
+                                editingMatchIndex = store.currentMatchIndex
+                            } label: {
+                                Label("Korrigieren", systemImage: "pencil")
+                                    .font(.caption.bold())
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.orange)
+                        }
+                    }
 
                     if currentMatch.isFinished {
-                        Text("Dieses Spiel ist bereits beendet.")
+                        Text("Dieses Spiel ist beendet (über 'Korrigieren' jederzeit anpassbar).")
                             .font(.caption)
                             .foregroundColor(.green)
                     } else if !store.isTimeMode && !store.isSetValidToFinish {
@@ -430,6 +547,13 @@ struct VolleyballView: View {
                 .background(Color(.systemBackground))
                 .cornerRadius(12)
                 .shadow(radius: 2)
+                .sheet(item: Binding(
+                    get: { editingMatchIndex.map { MatchEditIdentifier(index: $0) } },
+                    set: { editingMatchIndex = $0?.index }
+                )) { item in
+                    MatchEditSheet(matchIndex: item.index)
+                        .environmentObject(store)
+                }
             }
         }
     }
@@ -438,6 +562,7 @@ struct VolleyballView: View {
         title: String,
         points: Int,
         color: Color,
+        plusDisabled: Bool,
         onPlus: @escaping () -> Void,
         onMinus: @escaping () -> Void
     ) -> some View {
@@ -451,6 +576,7 @@ struct VolleyballView: View {
             HStack(spacing: 8) {
                 Button("+1", action: onPlus)
                     .buttonStyle(.borderedProminent)
+                    .disabled(plusDisabled)
                 Button("-1", action: onMinus)
                     .buttonStyle(.bordered)
             }
@@ -489,7 +615,7 @@ struct VolleyballView: View {
     private var standingsSheet: some View {
         NavigationStack {
             List {
-                let sorted = store.teams.sorted { $0.rankScore > $1.rankScore }
+                let sorted = store.sortedStandingsTeams()
                 ForEach(Array(sorted.enumerated()), id: \.element.id) { idx, team in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -528,58 +654,54 @@ struct VolleyballView: View {
         }
     }
 
-    // MARK: - Sheet: Gesamtspielplan
+    // MARK: - Sheet: Gesamtspielplan (1. Spielfeld, 2. Gruppe + Korrektur)
 
     private var scheduleSheet: some View {
         NavigationStack {
-            List {
-                ForEach(Array(store.matches.enumerated()), id: \.element.id) { idx, match in
-                    let tA = store.teams[match.teamAIndex].name
-                    let tB = store.teams[match.teamBIndex].name
-                    let isCurrent = idx == store.currentMatchIndex
+            VStack(spacing: 0) {
+                Picker("Gliederung", selection: $scheduleGrouping) {
+                    ForEach(ScheduleGroupingMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding()
 
-                    Button {
-                        store.switchToMatch(index: idx)
-                        activeSheet = nil
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text("Spiel \(idx + 1) • \(match.label)\(store.courtCount > 1 ? " • Feld \(match.courtNumber)" : "")")
-                                    .font(.caption.bold())
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                if match.isFinished {
-                                    Text("Fertig (\(match.setsA):\(match.setsB))")
-                                        .font(.caption.bold())
-                                        .foregroundColor(.green)
-                                } else if isCurrent {
-                                    Text("Aktiv")
-                                        .font(.caption.bold())
-                                        .foregroundColor(.blue)
-                                } else {
-                                    Text("Offen")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                List {
+                    switch scheduleGrouping {
+                    case .chronological:
+                        ForEach(Array(store.matches.enumerated()), id: \.element.id) { idx, match in
+                            scheduleMatchRow(idx: idx, match: match)
+                        }
+
+                    case .byCourtThenGroup:
+                        let courts = Array(Set(store.matches.map { $0.courtNumber })).sorted()
+                        ForEach(courts, id: \.self) { court in
+                            Section(header: Text("Spielfeld \(court)").font(.headline)) {
+                                let courtMatches = store.matches.enumerated()
+                                    .filter { $0.element.courtNumber == court }
+                                    .sorted { lhs, rhs in
+                                        let gL = lhs.element.groupIndex ?? 99
+                                        let gR = rhs.element.groupIndex ?? 99
+                                        if gL != gR { return gL < gR }
+                                        return lhs.offset < rhs.offset
+                                    }
+                                ForEach(courtMatches, id: \.element.id) { idx, match in
+                                    scheduleMatchRow(idx: idx, match: match)
                                 }
                             }
+                        }
 
-                            Text("\(tA) vs \(tB)")
-                                .font(.headline)
-                                .foregroundColor(.primary)
-
-                            Text("Schiedsgericht: \(store.refereeName(for: match))")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-
-                            if !match.setResults.isEmpty {
-                                Text("Sätze: " + match.setResults.enumerated().map { sIdx, pair in
-                                    pair.count == 2 ? "S\(sIdx + 1): \(pair[0]):\(pair[1])" : ""
-                                }.filter { !$0.isEmpty }.joined(separator: ", "))
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                    case .byGroup:
+                        let labels = Array(NSOrderedSet(array: store.matches.map { $0.label })) as? [String] ?? []
+                        ForEach(labels, id: \.self) { grpLabel in
+                            Section(header: Text(grpLabel).font(.headline)) {
+                                let grpMatches = store.matches.enumerated().filter { $0.element.label == grpLabel }
+                                ForEach(grpMatches, id: \.element.id) { idx, match in
+                                    scheduleMatchRow(idx: idx, match: match)
+                                }
                             }
                         }
-                        .padding(.vertical, 4)
                     }
                 }
             }
@@ -589,10 +711,79 @@ struct VolleyballView: View {
                     Button("Fertig") { activeSheet = nil }
                 }
             }
+            .sheet(item: Binding(
+                get: { editingMatchIndex.map { MatchEditIdentifier(index: $0) } },
+                set: { editingMatchIndex = $0?.index }
+            )) { item in
+                MatchEditSheet(matchIndex: item.index)
+                    .environmentObject(store)
+            }
         }
     }
 
-    // MARK: - Sheet: Grafischer Turnierbaum & Export
+    private func scheduleMatchRow(idx: Int, match: VolleyballMatch) -> some View {
+        let tA = store.teams[match.teamAIndex].name
+        let tB = store.teams[match.teamBIndex].name
+        let isCurrent = idx == store.currentMatchIndex
+
+        return HStack(alignment: .center, spacing: 8) {
+            Button {
+                store.switchToMatch(index: idx)
+                activeSheet = nil
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Spiel \(idx + 1) • \(match.label)\(store.courtCount > 1 ? " • Feld \(match.courtNumber)" : "")")
+                            .font(.caption.bold())
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        if match.isFinished {
+                            Text("Fertig (\(match.setsA):\(match.setsB))")
+                                .font(.caption.bold())
+                                .foregroundColor(.green)
+                        } else if isCurrent {
+                            Text("Aktiv")
+                                .font(.caption.bold())
+                                .foregroundColor(.blue)
+                        } else {
+                            Text("Offen")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Text("\(tA) vs \(tB)")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Text("Schiedsgericht: \(store.refereeName(for: match))")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+
+                    if !match.setResults.isEmpty {
+                        Text("Sätze: " + match.setResults.enumerated().map { sIdx, pair in
+                            pair.count == 2 ? "S\(sIdx + 1): \(pair[0]):\(pair[1])" : ""
+                        }.filter { !$0.isEmpty }.joined(separator: ", "))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                editingMatchIndex = idx
+            } label: {
+                Image(systemName: "pencil.circle.fill")
+                    .font(.title3)
+                    .foregroundColor(.orange)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Sheet: Grafischer Turnierbaum (inkl. Platzhalter-Kästen für kommende Runden)
 
     private var bracketSheet: some View {
         NavigationStack {
@@ -629,9 +820,14 @@ struct VolleyballView: View {
     }
 
     private var tournamentBracketCanvas: some View {
-        let activeStages = TournamentStage.allCases.filter { stage in
-            store.matches.contains { $0.stage == stage }
-        }
+        let plannedStages: [TournamentStage] = {
+            var stages: [TournamentStage] = [.round1]
+            if store.formatMode == .classicRoundRobin && store.groupCount >= 2 && store.enableCrossSeedRound2 {
+                stages.append(.round2)
+            }
+            stages.append(.placement)
+            return stages
+        }()
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -641,7 +837,7 @@ struct VolleyballView: View {
             }
 
             HStack(alignment: .top, spacing: 24) {
-                ForEach(activeStages, id: \.self) { stage in
+                ForEach(plannedStages, id: \.self) { stage in
                     let stageMatches = store.matches.filter { $0.stage == stage }
                     VStack(alignment: .leading, spacing: 12) {
                         Text(stage.rawValue)
@@ -653,53 +849,105 @@ struct VolleyballView: View {
                             .foregroundColor(.teal)
                             .cornerRadius(8)
 
-                        ForEach(stageMatches) { match in
-                            let tA = store.teams[match.teamAIndex].name
-                            let tB = store.teams[match.teamBIndex].name
-                            let aWon = match.isFinished && match.setsA > match.setsB
-                            let bWon = match.isFinished && match.setsB > match.setsA
+                        if !stageMatches.isEmpty {
+                            ForEach(stageMatches) { match in
+                                let tA = store.teams[match.teamAIndex].name
+                                let tB = store.teams[match.teamBIndex].name
+                                let aWon = match.isFinished && match.setsA > match.setsB
+                                let bWon = match.isFinished && match.setsB > match.setsA
 
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(match.label)
-                                        .font(.caption2.bold())
-                                        .foregroundColor(.secondary)
-                                    Spacer()
-                                    if store.courtCount > 1 {
-                                        Text("Feld \(match.courtNumber)")
-                                            .font(.caption2)
-                                            .foregroundColor(.teal)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack {
+                                        Text(match.label)
+                                            .font(.caption2.bold())
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                        if store.courtCount > 1 {
+                                            Text("Feld \(match.courtNumber)")
+                                                .font(.caption2)
+                                                .foregroundColor(.teal)
+                                        }
+                                    }
+
+                                    HStack {
+                                        Text(tA)
+                                            .font(.caption.weight(aWon ? .bold : .regular))
+                                            .foregroundColor(aWon ? .green : .primary)
+                                        Spacer()
+                                        Text(match.isFinished ? "\(match.setsA)" : "-")
+                                            .font(.caption.monospacedDigit().bold())
+                                    }
+
+                                    Divider()
+
+                                    HStack {
+                                        Text(tB)
+                                            .font(.caption.weight(bWon ? .bold : .regular))
+                                            .foregroundColor(bWon ? .green : .primary)
+                                        Spacer()
+                                        Text(match.isFinished ? "\(match.setsB)" : "-")
+                                            .font(.caption.monospacedDigit().bold())
                                     }
                                 }
-
-                                HStack {
-                                    Text(tA)
-                                        .font(.caption.weight(aWon ? .bold : .regular))
-                                        .foregroundColor(aWon ? .green : .primary)
-                                    Spacer()
-                                    Text(match.isFinished ? "\(match.setsA)" : "-")
-                                        .font(.caption.monospacedDigit().bold())
-                                }
-
-                                Divider()
-
-                                HStack {
-                                    Text(tB)
-                                        .font(.caption.weight(bWon ? .bold : .regular))
-                                        .foregroundColor(bWon ? .green : .primary)
-                                    Spacer()
-                                    Text(match.isFinished ? "\(match.setsB)" : "-")
-                                        .font(.caption.monospacedDigit().bold())
-                                }
+                                .padding(10)
+                                .frame(width: 220)
+                                .background(Color(.secondarySystemBackground))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(match.isFinished ? Color.green.opacity(0.5) : Color.gray.opacity(0.3), lineWidth: 1.5)
+                                )
+                                .cornerRadius(10)
                             }
-                            .padding(10)
-                            .frame(width: 220)
-                            .background(Color(.secondarySystemBackground))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(match.isFinished ? Color.green.opacity(0.5) : Color.gray.opacity(0.3), lineWidth: 1.5)
-                            )
-                            .cornerRadius(10)
+                        } else {
+                            // Vorgefertigte Platzhalter-Kästen für noch ausstehende Runden
+                            let placeholders = placeholderBoxes(for: stage)
+                            ForEach(placeholders.indices, id: \.self) { pIdx in
+                                let box = placeholders[pIdx]
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack {
+                                        Text(box.title)
+                                            .font(.caption2.bold())
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                        Text("Ausstehend")
+                                            .font(.caption2)
+                                            .foregroundColor(.orange)
+                                    }
+
+                                    HStack {
+                                        Text(box.slotA)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .italic()
+                                        Spacer()
+                                        Text("–")
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundColor(.secondary)
+                                    }
+
+                                    Divider()
+
+                                    HStack {
+                                        Text(box.slotB)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .italic()
+                                        Spacer()
+                                        Text("–")
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding(10)
+                                .frame(width: 220)
+                                .background(Color(.secondarySystemBackground).opacity(0.45))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                                        .foregroundColor(.gray.opacity(0.45))
+                                )
+                                .cornerRadius(10)
+                            }
                         }
                     }
                     .frame(width: 220)
@@ -711,6 +959,29 @@ struct VolleyballView: View {
         .cornerRadius(12)
     }
 
+    private func placeholderBoxes(for stage: TournamentStage) -> [(title: String, slotA: String, slotB: String)] {
+        if stage == .round2 {
+            let groups = max(2, store.groupCount)
+            return (0..<groups).map { gIdx in
+                (
+                    title: "R2 • \(store.groupName(for: gIdx))",
+                    slotA: "Setzplatz (aus Runde 1)",
+                    slotB: "Kreuz-Gegner (aus Runde 1)"
+                )
+            }
+        } else {
+            let pairCount = max(1, store.teamCount / 2)
+            return (0..<pairCount).map { idx in
+                let title = (idx == 0) ? "Finale (Platz 1–2)" : "Spiel um Platz \(idx * 2 + 1)–\(idx * 2 + 2)"
+                return (
+                    title: title,
+                    slotA: "Qualifikant Platz \(idx * 2 + 1)",
+                    slotB: "Qualifikant Platz \(idx * 2 + 2)"
+                )
+            }
+        }
+    }
+
     @MainActor
     private func renderBracketImage() {
         let renderer = ImageRenderer(content: tournamentBracketCanvas)
@@ -718,7 +989,7 @@ struct VolleyballView: View {
         exportedBracketImage = renderer.uiImage
     }
 
-    // MARK: - Sheet: Großer Buzzer & Trainings-Verlosung
+    // MARK: - Sheet: Großer Buzzer & Verlosung
 
     private var buzzerSheet: some View {
         NavigationStack {
@@ -749,6 +1020,28 @@ struct VolleyballView: View {
                                 .font(.caption.bold())
                         }
                         .buttonStyle(.bordered)
+                    }
+
+                    if store.buzzerCategory == .tournamentTeams {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Verlosung der \(store.teamCount) Turnier-Teams (Namen aus Seite 1) auf \(store.groupCount == 0 ? "Offene Runde" : "\(store.groupCount) Gruppen") & \(store.courtCount) Spielfeld\(store.courtCount == 1 ? "" : "er").")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            HStack {
+                                Text("Verlost: \(store.tournamentTeamDraws.count) / \(store.teamCount)")
+                                    .font(.caption.bold())
+                                Spacer()
+                                Button("Verlosung zurücksetzen") {
+                                    store.resetTournamentTeamDraw()
+                                }
+                                .font(.caption)
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
                     }
 
                     if store.buzzerCategory == .trainingTeams {
@@ -784,18 +1077,18 @@ struct VolleyballView: View {
                         .cornerRadius(12)
                     }
 
-                    // Ergebnis-Anzeige
+                    // Ergebnis-Anzeige (vor der Auslösung bewusst leer!)
                     VStack(spacing: 6) {
-                        Text(store.lastBuzzerHeadline)
+                        Text(store.lastBuzzerHeadline.isEmpty ? " " : store.lastBuzzerHeadline)
                             .font(.title2.bold())
                             .multilineTextAlignment(.center)
-                        Text(store.lastBuzzerSubline)
+                        Text(store.lastBuzzerSubline.isEmpty ? " " : store.lastBuzzerSubline)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                     }
                     .padding()
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 84)
                     .background(Color(.secondarySystemBackground))
                     .cornerRadius(12)
 
@@ -826,6 +1119,42 @@ struct VolleyballView: View {
                         }
                     }
                     .padding(.vertical, 8)
+
+                    if store.buzzerCategory == .tournamentTeams && !store.tournamentTeamDraws.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Ausgeloste Turnier-Teams (\(store.tournamentTeamDraws.count)/\(store.teamCount)):")
+                                .font(.subheadline.bold())
+
+                            ForEach(store.tournamentTeamDraws.reversed()) { entry in
+                                HStack {
+                                    Text("#\(entry.drawNumber)")
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundColor(.secondary)
+                                    Text(entry.teamName)
+                                        .font(.subheadline.bold())
+                                    Spacer()
+                                    if let g = entry.groupIndex {
+                                        Text(store.groupName(for: g))
+                                            .font(.caption.bold())
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 3)
+                                            .background(Color.blue.opacity(0.15))
+                                            .cornerRadius(6)
+                                    }
+                                    Text("Feld \(entry.courtNumber)")
+                                        .font(.caption.bold())
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(Color.teal.opacity(0.18))
+                                        .foregroundColor(.teal)
+                                        .cornerRadius(6)
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                    }
 
                     if store.buzzerCategory == .trainingTeams && !store.trainingDraws.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
@@ -860,6 +1189,91 @@ struct VolleyballView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Fertig") { activeSheet = nil }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Hilfs-Sheet zur nachträglichen Ergebniskorrektur
+
+private struct MatchEditIdentifier: Identifiable {
+    let index: Int
+    var id: Int { index }
+}
+
+private struct MatchEditSheet: View {
+    @EnvironmentObject private var store: VolleyballTournamentStore
+    @Environment(\.dismiss) private var dismiss
+    let matchIndex: Int
+
+    @State private var editableSets: [[Int]] = []
+    @State private var isFinished: Bool = true
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if store.matches.indices.contains(matchIndex) {
+                    let match = store.matches[matchIndex]
+                    let tA = store.teams[match.teamAIndex].name
+                    let tB = store.teams[match.teamBIndex].name
+
+                    Section(header: Text("\(tA) vs \(tB)")) {
+                        Toggle("Spiel als beendet markieren", isOn: $isFinished)
+                    }
+
+                    Section(header: Text("Satzergebnisse korrigieren")) {
+                        ForEach(editableSets.indices, id: \.self) { idx in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Satz \(idx + 1)")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.secondary)
+
+                                Stepper("\(tA): \(editableSets[idx][0])",
+                                        value: $editableSets[idx][0],
+                                        in: 0...99)
+
+                                Stepper("\(tB): \(editableSets[idx][1])",
+                                        value: $editableSets[idx][1],
+                                        in: 0...99)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .onDelete { offsets in
+                            editableSets.remove(atOffsets: offsets)
+                        }
+
+                        if editableSets.count < max(3, store.maxSets) {
+                            Button {
+                                editableSets.append([0, 0])
+                            } label: {
+                                Label("Weiteren Satz hinzufügen", systemImage: "plus.circle")
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Spiel \(matchIndex + 1) korrigieren")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Abbrechen") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Speichern") {
+                        store.updateMatchResult(
+                            matchIndex: matchIndex,
+                            newSetResults: editableSets,
+                            markFinished: isFinished
+                        )
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                if store.matches.indices.contains(matchIndex) {
+                    let match = store.matches[matchIndex]
+                    editableSets = match.setResults.isEmpty ? [[0, 0]] : match.setResults
+                    isFinished = match.isFinished
                 }
             }
         }

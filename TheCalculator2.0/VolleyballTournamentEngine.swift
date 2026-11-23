@@ -16,6 +16,7 @@ struct VolleyballTeam: Identifiable, Hashable, Codable {
     let id: UUID
     var name: String
     var groupIndex: Int? // 0 = Gruppe A, 1 = Gruppe B, ...
+    var assignedCourt: Int? // Optional per Buzzer ausgelostes Stammfeld (1...6)
     var matchesPlayed: Int = 0
     var matchesWon: Int = 0
     var matchesLost: Int = 0
@@ -25,10 +26,11 @@ struct VolleyballTeam: Identifiable, Hashable, Codable {
     var pointsLost: Int = 0
     var refereeCount: Int = 0
 
-    init(id: UUID = UUID(), name: String, groupIndex: Int? = nil) {
+    init(id: UUID = UUID(), name: String, groupIndex: Int? = nil, assignedCourt: Int? = nil) {
         self.id = id
         self.name = name
         self.groupIndex = groupIndex
+        self.assignedCourt = assignedCourt
     }
 
     var setDifference: Int { setsWon - setsLost }
@@ -37,6 +39,13 @@ struct VolleyballTeam: Identifiable, Hashable, Codable {
     var rankScore: Int {
         (matchesWon * 10_000) + (setDifference * 200) + pointDifference
     }
+}
+
+enum TournamentFormatMode: String, CaseIterable, Identifiable, Codable {
+    case classicRoundRobin = "Klassisch (Jeder gegen jeden)"
+    case rallyeCompact = "Rallye-System (Kompakt / Schweizer)"
+
+    var id: String { rawValue }
 }
 
 enum TournamentStage: String, Codable, CaseIterable {
@@ -59,7 +68,7 @@ struct VolleyballMatch: Identifiable, Hashable, Codable {
     var setsA: Int = 0
     var setsB: Int = 0
     var isFinished: Bool = false
-    var setResults: [[Int]] = [] // [[25, 21], [22, 25], [15, 12]]
+    var setResults: [[Int]] = [] // [[11, 8], [9, 11], [11, 7]]
 
     init(
         id: UUID = UUID(),
@@ -92,6 +101,7 @@ enum BuzzerCategory: String, CaseIterable, Identifiable, Codable {
     case sideAndBall = "Seite & Ball"
     case sideOnly = "Nur Seite"
     case ballOnly = "Ball / Aufschlag"
+    case tournamentTeams = "Turnier-Teams (Gruppe & Feld)"
     case trainingTeams = "Trainings-Teams (4–21)"
 
     var id: String { rawValue }
@@ -136,12 +146,32 @@ struct BuzzerDrawEntry: Identifiable, Codable {
     }
 }
 
+struct TournamentTeamDrawEntry: Identifiable, Codable {
+    let id: UUID
+    let drawNumber: Int
+    let teamIndex: Int
+    let teamName: String
+    let groupIndex: Int?
+    let courtNumber: Int
+
+    init(id: UUID = UUID(), drawNumber: Int, teamIndex: Int, teamName: String, groupIndex: Int?, courtNumber: Int) {
+        self.id = id
+        self.drawNumber = drawNumber
+        self.teamIndex = teamIndex
+        self.teamName = teamName
+        self.groupIndex = groupIndex
+        self.courtNumber = courtNumber
+    }
+}
+
 // MARK: - Persistenter Snapshot für App-Wechsel & Neustarts
 
 private struct VolleyballPersistenceSnapshot: Codable {
     var teamCount: Int
     var groupCount: Int
     var courtCount: Int
+    var formatMode: TournamentFormatMode
+    var rallyeRoundsCount: Int
     var randomizeInitialGroups: Bool
     var enableCrossSeedRound2: Bool
     var teamNames: [String]
@@ -149,6 +179,7 @@ private struct VolleyballPersistenceSnapshot: Codable {
     var targetPointsStandard: Int
     var isTimeMode: Bool
     var matchDurationMinutes: Int
+    var enableHalftimeSwitch: Bool
     var gameStarted: Bool
     var currentStage: TournamentStage
     var teams: [VolleyballTeam]
@@ -160,23 +191,24 @@ private struct VolleyballPersistenceSnapshot: Codable {
     var currentSetSetsB: Int
     var setHistory: [[Int]]
     var remainingSeconds: Int
+    var halftimeTriggeredForCurrentMatch: Bool
+    var isHalftimePaused: Bool
     var buzzerCategory: BuzzerCategory
     var buzzerSound: BuzzerSoundOption
-    var lastBuzzerHeadline: String
-    var lastBuzzerSubline: String
     var trainingPersonCount: Int
     var trainingTeamCount: Int
     var assignOptionalNamesInTraining: Bool
     var trainingPlayerNames: [String]
     var remainingTrainingPool: [Int]
     var trainingDraws: [BuzzerDrawEntry]
+    var tournamentTeamDraws: [TournamentTeamDrawEntry]
 }
 
 // MARK: - Persistenter Turnier- & Buzzer-Store
 
 @MainActor
 final class VolleyballTournamentStore: ObservableObject {
-    private let storageKey = "VolleyballTournamentStore.snapshot.v2"
+    private let storageKey = "VolleyballTournamentStore.snapshot.v3"
     private var isRestoring = false
 
     // Konfiguration (3 bis 36 Teams, 0 bis 6 Gruppen, 1 bis 6 Spielfelder)
@@ -194,6 +226,9 @@ final class VolleyballTournamentStore: ObservableObject {
             if courtCount > maxAllowedCourts {
                 courtCount = maxAllowedCourts
             }
+            if !isRestoring {
+                resetTournamentTeamDraw()
+            }
             saveState()
         }
     }
@@ -204,6 +239,9 @@ final class VolleyballTournamentStore: ObservableObject {
             if groupCount != clamped {
                 groupCount = clamped
                 return
+            }
+            if !isRestoring {
+                resetTournamentTeamDraw()
             }
             saveState()
         }
@@ -216,6 +254,21 @@ final class VolleyballTournamentStore: ObservableObject {
                 courtCount = clamped
                 return
             }
+            if !isRestoring {
+                resetTournamentTeamDraw()
+            }
+            saveState()
+        }
+    }
+
+    @Published var formatMode: TournamentFormatMode = .classicRoundRobin { didSet { saveState() } }
+    @Published var rallyeRoundsCount: Int = 4 {
+        didSet {
+            let clamped = min(max(rallyeRoundsCount, 2), 12)
+            if rallyeRoundsCount != clamped {
+                rallyeRoundsCount = clamped
+                return
+            }
             saveState()
         }
     }
@@ -226,18 +279,22 @@ final class VolleyballTournamentStore: ObservableObject {
 
     // Satz-, Punkte- & Timer-Konfiguration
     @Published var maxSets: Int = 3 { didSet { saveState() } }
-    @Published var targetPointsStandard: Int = 25 { didSet { saveState() } }
+    @Published var targetPointsStandard: Int = 11 { didSet { saveState() } }
+    @Published var overrideScoreLock: Bool = false
     @Published var isTimeMode: Bool = false { didSet { saveState() } }
-    @Published var matchDurationMinutes: Int = 12 {
+    @Published var matchDurationMinutes: Int = 8 {
         didSet {
             if !timerActive {
                 remainingSeconds = matchDurationMinutes * 60
+                halftimeTriggeredForCurrentMatch = false
+                isHalftimePaused = false
             }
             saveState()
         }
     }
+    @Published var enableHalftimeSwitch: Bool = true { didSet { saveState() } }
 
-    // Laufender Turnier-Status (bleibt bei Modulwechsel & App-Wechsel erhalten!)
+    // Laufender Turnier-Status
     @Published var gameStarted: Bool = false { didSet { saveState() } }
     @Published var currentStage: TournamentStage = .round1 { didSet { saveState() } }
     @Published var teams: [VolleyballTeam] = [] { didSet { saveState() } }
@@ -251,17 +308,30 @@ final class VolleyballTournamentStore: ObservableObject {
     @Published var currentSetSetsB: Int = 0 { didSet { saveState() } }
     @Published var setHistory: [[Int]] = [] { didSet { saveState() } }
 
-    // Timer
-    @Published var remainingSeconds: Int = 720 { didSet { saveState() } }
+    // Timer & Halbzeit-Wechsel
+    @Published var remainingSeconds: Int = 480 { didSet { saveState() } }
     @Published var timerActive: Bool = false
+    @Published var halftimeTriggeredForCurrentMatch: Bool = false { didSet { saveState() } }
+    @Published var isHalftimePaused: Bool = false { didSet { saveState() } }
     private var timerCancellable: AnyCancellable?
 
-    // Buzzer-Zustand & Tonwahl (ebenfalls persistent)
-    @Published var buzzerCategory: BuzzerCategory = .sideAndBall { didSet { saveState() } }
+    // Buzzer-Zustand & Tonwahl (bewusst leer vor Auslösung!)
+    @Published var buzzerCategory: BuzzerCategory = .sideAndBall {
+        didSet {
+            if !isRestoring {
+                clearBuzzerDisplay()
+            }
+            saveState()
+        }
+    }
     @Published var buzzerSound: BuzzerSoundOption = .classicBuzzer { didSet { saveState() } }
-    @Published var lastBuzzerHeadline: String = "Bereit zum Buzzern" { didSet { saveState() } }
-    @Published var lastBuzzerSubline: String = "Wähle oben Kategorie & Ton und drücke den Buzzer" { didSet { saveState() } }
+    @Published var lastBuzzerHeadline: String = ""
+    @Published var lastBuzzerSubline: String = ""
     @Published var buzzerPulseCount: Int = 0
+
+    // Turnier-Teams-Verlosung (Gruppe + Spielfeld aus Seite 1)
+    @Published var remainingTournamentTeamIndices: [Int] = []
+    @Published var tournamentTeamDraws: [TournamentTeamDrawEntry] = [] { didSet { saveState() } }
 
     // Trainings-Verlosung (4 bis 21 Personen auf 2 bis 3 Teams)
     @Published var trainingPersonCount: Int = 12 {
@@ -302,6 +372,12 @@ final class VolleyballTournamentStore: ObservableObject {
         ensureTeamNameSlots()
         if !loadState() {
             resetTrainingDraw()
+            resetTournamentTeamDraw()
+            clearBuzzerDisplay()
+        } else {
+            // Beim Öffnen der App Buzzer-Anzeige leer halten, damit keine Verwechslungen entstehen
+            clearBuzzerDisplay()
+            rebuildRemainingTournamentPool()
         }
     }
 
@@ -310,12 +386,15 @@ final class VolleyballTournamentStore: ObservableObject {
     }
 
     var maxAllowedCourts: Int {
-        // Pro Spielfeld werden mindestens 2 spielende Teams benötigt (maximal 6 Felder)
         min(6, max(1, teamCount / 2))
     }
 
+    /// Entscheidungssatz: Bei Sätzen <= 15 volle Punktzahl (z. B. 11 -> 11), bei 25 Punkten Tiebreak 15
     var effectiveDecidingSetPoints: Int {
-        max(10, Int(Double(targetPointsStandard) * 0.6))
+        if targetPointsStandard <= 15 {
+            return targetPointsStandard
+        }
+        return max(15, Int(Double(targetPointsStandard) * 0.6))
     }
 
     var targetPointsToWinSet: Int {
@@ -331,17 +410,24 @@ final class VolleyballTournamentStore: ObservableObject {
         return maxP >= target && diff >= 2
     }
 
+    /// Sperrt weiteres Hochzählen, sobald Zielpunktzahl + 2 Punkte Vorsprung erreicht sind
+    var isSetScoreLocked: Bool {
+        if isTimeMode || overrideScoreLock { return false }
+        return isSetValidToFinish
+    }
+
     var isCurrentStageFinished: Bool {
         let stageMatches = matches.filter { $0.stage == currentStage }
         return !stageMatches.isEmpty && stageMatches.allSatisfy { $0.isFinished }
     }
 
     var canAdvanceToRound2: Bool {
-        currentStage == .round1 && isCurrentStageFinished && groupCount >= 2 && enableCrossSeedRound2
+        formatMode == .classicRoundRobin && currentStage == .round1 && isCurrentStageFinished && groupCount >= 2 && enableCrossSeedRound2
     }
 
     var canAdvanceToPlacementRound: Bool {
         isCurrentStageFinished && (
+            formatMode == .rallyeCompact ||
             (currentStage == .round1 && (!enableCrossSeedRound2 || groupCount < 2)) ||
             currentStage == .round2
         )
@@ -355,10 +441,46 @@ final class VolleyballTournamentStore: ObservableObject {
         return "Gruppe \(index + 1)"
     }
 
+    func activeTeamName(at index: Int) -> String {
+        guard index >= 0 && index < teamNames.count else { return "Team \(index + 1)" }
+        let trimmed = teamNames[index].trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Team \(index + 1)" : trimmed
+    }
+
     private func ensureTeamNameSlots() {
         while teamNames.count < 36 {
             teamNames.append("Team \(teamNames.count + 1)")
         }
+    }
+
+    // MARK: - Deterministische Tabellen-Sortierung (inkl. Alphanumerik bei Gleichstand)
+
+    func sortedStandingsTeams() -> [VolleyballTeam] {
+        teams.sorted { lhs, rhs in
+            compareTeams(lhs, rhs)
+        }
+    }
+
+    func sortedTeamIndices(from indices: [Int]) -> [Int] {
+        indices.sorted { lhsIdx, rhsIdx in
+            compareTeams(teams[lhsIdx], teams[rhsIdx])
+        }
+    }
+
+    private func compareTeams(_ lhs: VolleyballTeam, _ rhs: VolleyballTeam) -> Bool {
+        if lhs.matchesWon != rhs.matchesWon {
+            return lhs.matchesWon > rhs.matchesWon
+        }
+        if lhs.setDifference != rhs.setDifference {
+            return lhs.setDifference > rhs.setDifference
+        }
+        if lhs.pointDifference != rhs.pointDifference {
+            return lhs.pointDifference > rhs.pointDifference
+        }
+        if lhs.pointsWon != rhs.pointsWon {
+            return lhs.pointsWon > rhs.pointsWon
+        }
+        return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
     }
 
     // MARK: - Persistenz (UserDefaults)
@@ -369,6 +491,8 @@ final class VolleyballTournamentStore: ObservableObject {
             teamCount: teamCount,
             groupCount: groupCount,
             courtCount: courtCount,
+            formatMode: formatMode,
+            rallyeRoundsCount: rallyeRoundsCount,
             randomizeInitialGroups: randomizeInitialGroups,
             enableCrossSeedRound2: enableCrossSeedRound2,
             teamNames: teamNames,
@@ -376,6 +500,7 @@ final class VolleyballTournamentStore: ObservableObject {
             targetPointsStandard: targetPointsStandard,
             isTimeMode: isTimeMode,
             matchDurationMinutes: matchDurationMinutes,
+            enableHalftimeSwitch: enableHalftimeSwitch,
             gameStarted: gameStarted,
             currentStage: currentStage,
             teams: teams,
@@ -387,16 +512,17 @@ final class VolleyballTournamentStore: ObservableObject {
             currentSetSetsB: currentSetSetsB,
             setHistory: setHistory,
             remainingSeconds: remainingSeconds,
+            halftimeTriggeredForCurrentMatch: halftimeTriggeredForCurrentMatch,
+            isHalftimePaused: isHalftimePaused,
             buzzerCategory: buzzerCategory,
             buzzerSound: buzzerSound,
-            lastBuzzerHeadline: lastBuzzerHeadline,
-            lastBuzzerSubline: lastBuzzerSubline,
             trainingPersonCount: trainingPersonCount,
             trainingTeamCount: trainingTeamCount,
             assignOptionalNamesInTraining: assignOptionalNamesInTraining,
             trainingPlayerNames: trainingPlayerNames,
             remainingTrainingPool: remainingTrainingPool,
-            trainingDraws: trainingDraws
+            trainingDraws: trainingDraws,
+            tournamentTeamDraws: tournamentTeamDraws
         )
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: storageKey)
@@ -415,6 +541,8 @@ final class VolleyballTournamentStore: ObservableObject {
         teamCount = snapshot.teamCount
         groupCount = snapshot.groupCount
         courtCount = snapshot.courtCount
+        formatMode = snapshot.formatMode
+        rallyeRoundsCount = snapshot.rallyeRoundsCount
         randomizeInitialGroups = snapshot.randomizeInitialGroups
         enableCrossSeedRound2 = snapshot.enableCrossSeedRound2
         teamNames = snapshot.teamNames
@@ -423,6 +551,7 @@ final class VolleyballTournamentStore: ObservableObject {
         targetPointsStandard = snapshot.targetPointsStandard
         isTimeMode = snapshot.isTimeMode
         matchDurationMinutes = snapshot.matchDurationMinutes
+        enableHalftimeSwitch = snapshot.enableHalftimeSwitch
         gameStarted = snapshot.gameStarted
         currentStage = snapshot.currentStage
         teams = snapshot.teams
@@ -434,20 +563,26 @@ final class VolleyballTournamentStore: ObservableObject {
         currentSetSetsB = snapshot.currentSetSetsB
         setHistory = snapshot.setHistory
         remainingSeconds = snapshot.remainingSeconds
+        halftimeTriggeredForCurrentMatch = snapshot.halftimeTriggeredForCurrentMatch
+        isHalftimePaused = snapshot.isHalftimePaused
         buzzerCategory = snapshot.buzzerCategory
         buzzerSound = snapshot.buzzerSound
-        lastBuzzerHeadline = snapshot.lastBuzzerHeadline
-        lastBuzzerSubline = snapshot.lastBuzzerSubline
         trainingPersonCount = snapshot.trainingPersonCount
         trainingTeamCount = snapshot.trainingTeamCount
         assignOptionalNamesInTraining = snapshot.assignOptionalNamesInTraining
         trainingPlayerNames = snapshot.trainingPlayerNames
         remainingTrainingPool = snapshot.remainingTrainingPool
         trainingDraws = snapshot.trainingDraws
+        tournamentTeamDraws = snapshot.tournamentTeamDraws
         return true
     }
 
-    // MARK: - Buzzer-Logik (inkl. Sound)
+    // MARK: - Buzzer-Logik (inkl. Sound, leere Startfelder & Turnier-Team-Verlosung)
+
+    func clearBuzzerDisplay() {
+        lastBuzzerHeadline = ""
+        lastBuzzerSubline = ""
+    }
 
     func triggerBuzzer() {
         buzzerPulseCount += 1
@@ -468,9 +603,56 @@ final class VolleyballTournamentStore: ObservableObject {
             lastBuzzerHeadline = Bool.random() ? "BALL / AUFSCHLAG" : "KEIN BALL / ANNAHME"
             lastBuzzerSubline = "Ballwahl ausgelost"
 
+        case .tournamentTeams:
+            drawNextTournamentTeam()
+
         case .trainingTeams:
             drawNextTrainingPerson()
         }
+    }
+
+    func resetTournamentTeamDraw() {
+        tournamentTeamDraws.removeAll()
+        remainingTournamentTeamIndices = Array(0..<teamCount).shuffled()
+        clearBuzzerDisplay()
+        saveState()
+    }
+
+    private func rebuildRemainingTournamentPool() {
+        let drawnIndices = Set(tournamentTeamDraws.map { $0.teamIndex })
+        remainingTournamentTeamIndices = (0..<teamCount).filter { !drawnIndices.contains($0) }.shuffled()
+    }
+
+    private func drawNextTournamentTeam() {
+        if remainingTournamentTeamIndices.isEmpty && tournamentTeamDraws.count < teamCount {
+            rebuildRemainingTournamentPool()
+        }
+        guard !remainingTournamentTeamIndices.isEmpty else {
+            lastBuzzerHeadline = "Alle \(teamCount) Teams verlost!"
+            lastBuzzerSubline = "Tippe auf 'Verlosung zurücksetzen' für eine neue Auslosung"
+            return
+        }
+
+        let teamIdx = remainingTournamentTeamIndices.removeFirst()
+        let drawNo = tournamentTeamDraws.count + 1
+        let tName = activeTeamName(at: teamIdx)
+
+        // Gleichmäßige Verteilung auf Gruppen & Spielfelder
+        let assignedGroup: Int? = groupCount > 0 ? ((drawNo - 1) % groupCount) : nil
+        let assignedCourt: Int = ((drawNo - 1) % max(1, courtCount)) + 1
+
+        let entry = TournamentTeamDrawEntry(
+            drawNumber: drawNo,
+            teamIndex: teamIdx,
+            teamName: tName,
+            groupIndex: assignedGroup,
+            courtNumber: assignedCourt
+        )
+        tournamentTeamDraws.append(entry)
+
+        let groupText = assignedGroup.map { groupName(for: $0) } ?? "Offene Runde"
+        lastBuzzerHeadline = "\(tName)"
+        lastBuzzerSubline = "\(groupText) • Feld \(assignedCourt)  (Los \(drawNo)/\(teamCount))"
     }
 
     func resetTrainingDraw() {
@@ -484,11 +666,7 @@ final class VolleyballTournamentStore: ObservableObject {
         }
         remainingTrainingPool = pool.shuffled()
         trainingDraws.removeAll()
-
-        if buzzerCategory == .trainingTeams {
-            lastBuzzerHeadline = "Bereit (\(trainingPersonCount) Pers. → \(trainingTeamCount) Teams)"
-            lastBuzzerSubline = "Jeder drückt 1× den Buzzer und merkt sich seine Team-Nr."
-        }
+        clearBuzzerDisplay()
         saveState()
     }
 
@@ -521,17 +699,35 @@ final class VolleyballTournamentStore: ObservableObject {
 
     func startTournament() {
         stopTimer()
-        let activeNames = (0..<teamCount).map { idx -> String in
-            let raw = teamNames[idx].trimmingCharacters(in: .whitespacesAndNewlines)
-            return raw.isEmpty ? "Team \(idx + 1)" : raw
-        }
-
+        let activeNames = (0..<teamCount).map { activeTeamName(at: $0) }
         var createdTeams = activeNames.map { VolleyballTeam(name: $0) }
         currentStage = .round1
 
-        if groupCount == 0 {
+        // Falls über den Buzzer bereits eine vollständige Team-Auslosung vorliegt, diese übernehmen!
+        let hasCompleteBuzzerDraw = (tournamentTeamDraws.count == teamCount)
+
+        if formatMode == .rallyeCompact {
+            // Kompakter Rallye-Modus: Teams spielen eine definierte Anzahl Runden nach Tabellenstand
+            if hasCompleteBuzzerDraw {
+                for draw in tournamentTeamDraws {
+                    createdTeams[draw.teamIndex].groupIndex = draw.groupIndex
+                    createdTeams[draw.teamIndex].assignedCourt = draw.courtNumber
+                }
+            } else if groupCount > 0 {
+                var order = Array(0..<teamCount)
+                if randomizeInitialGroups { order.shuffle() }
+                for (pos, tIdx) in order.enumerated() {
+                    createdTeams[tIdx].groupIndex = pos % groupCount
+                }
+            }
+            teams = createdTeams
+            matches = generateNextRallyeRoundMatches(roundNumber: 1)
+        } else if groupCount == 0 {
             for i in createdTeams.indices {
                 createdTeams[i].groupIndex = nil
+                if hasCompleteBuzzerDraw, let draw = tournamentTeamDraws.first(where: { $0.teamIndex == i }) {
+                    createdTeams[i].assignedCourt = draw.courtNumber
+                }
             }
             teams = createdTeams
             matches = generateFairScheduleForBuckets(
@@ -540,16 +736,24 @@ final class VolleyballTournamentStore: ObservableObject {
                 stage: .round1
             )
         } else {
-            var order = Array(0..<teamCount)
-            if randomizeInitialGroups {
-                order.shuffle()
-            }
-
             var groupBuckets: [[Int]] = Array(repeating: [], count: groupCount)
-            for (pos, teamIdx) in order.enumerated() {
-                let g = pos % groupCount
-                groupBuckets[g].append(teamIdx)
-                createdTeams[teamIdx].groupIndex = g
+            if hasCompleteBuzzerDraw {
+                for draw in tournamentTeamDraws {
+                    let g = min(max(draw.groupIndex ?? 0, 0), groupCount - 1)
+                    groupBuckets[g].append(draw.teamIndex)
+                    createdTeams[draw.teamIndex].groupIndex = g
+                    createdTeams[draw.teamIndex].assignedCourt = draw.courtNumber
+                }
+            } else {
+                var order = Array(0..<teamCount)
+                if randomizeInitialGroups {
+                    order.shuffle()
+                }
+                for (pos, teamIdx) in order.enumerated() {
+                    let g = pos % groupCount
+                    groupBuckets[g].append(teamIdx)
+                    createdTeams[teamIdx].groupIndex = g
+                }
             }
 
             teams = createdTeams
@@ -565,9 +769,109 @@ final class VolleyballTournamentStore: ObservableObject {
 
         currentMatchIndex = 0
         remainingSeconds = matchDurationMinutes * 60
+        halftimeTriggeredForCurrentMatch = false
+        isHalftimePaused = false
+        overrideScoreLock = false
         resetMatchState()
         gameStarted = true
         saveState()
+    }
+
+    // MARK: - Rallye-System (Kompakt / Schweizer System für große Felder)
+
+    var canGenerateNextRallyeRound: Bool {
+        guard formatMode == .rallyeCompact, gameStarted, currentStage == .round1, isCurrentStageFinished else {
+            return false
+        }
+        let maxRound = matches.map { $0.roundNumber }.max() ?? 1
+        return maxRound < rallyeRoundsCount
+    }
+
+    func startNextRallyeRound() {
+        guard canGenerateNextRallyeRound else { return }
+        stopTimer()
+        let nextRound = (matches.map { $0.roundNumber }.max() ?? 1) + 1
+        let newMatches = generateNextRallyeRoundMatches(roundNumber: nextRound)
+        guard !newMatches.isEmpty else { return }
+
+        let startIndex = matches.count
+        matches.append(contentsOf: newMatches)
+        switchToMatch(index: startIndex)
+        saveState()
+    }
+
+    private func generateNextRallyeRoundMatches(roundNumber: Int) -> [VolleyballMatch] {
+        var existingPairs: Set<String> = []
+        for m in matches {
+            let key = "\(min(m.teamAIndex, m.teamBIndex))-\(max(m.teamAIndex, m.teamBIndex))"
+            existingPairs.insert(key)
+        }
+
+        var ordered = sortedTeamIndices(from: Array(teams.indices))
+        if roundNumber == 1 && randomizeInitialGroups {
+            ordered.shuffle()
+        }
+
+        var unpaired = ordered
+        var pairs: [(groupIndex: Int?, label: String, a: Int, b: Int)] = []
+
+        while unpaired.count >= 2 {
+            let teamA = unpaired.removeFirst()
+            // Suche den nächstplatzierten Gegner, gegen den noch nicht gespielt wurde
+            let oppPos = unpaired.firstIndex { candidate in
+                let key = "\(min(teamA, candidate))-\(max(teamA, candidate))"
+                return !existingPairs.contains(key)
+            } ?? 0
+            let teamB = unpaired.remove(at: oppPos)
+            let grpIdx = (teams[teamA].groupIndex == teams[teamB].groupIndex) ? teams[teamA].groupIndex : nil
+            let label = "Rallye R\(roundNumber)"
+            pairs.append((groupIndex: grpIdx, label: label, a: teamA, b: teamB))
+        }
+
+        // Auf Spielfelder & Slots verteilen
+        var scheduled: [VolleyballMatch] = []
+        let effectiveCourts = max(1, min(courtCount, teams.count / 2))
+        var slot = (matches.map { $0.timeSlot }.max() ?? -1) + 1
+        var refCount: [Int: Int] = Dictionary(uniqueKeysWithValues: teams.indices.map { ($0, teams[$0].refereeCount) })
+
+        var idx = 0
+        while idx < pairs.count {
+            let slice = Array(pairs[idx..<min(idx + effectiveCourts, pairs.count)])
+            var busyInSlot: Set<Int> = []
+            for p in slice {
+                busyInSlot.insert(p.a)
+                busyInSlot.insert(p.b)
+            }
+
+            for (offset, p) in slice.enumerated() {
+                let court = offset + 1
+                let refCandidate = teams.indices
+                    .filter { !busyInSlot.contains($0) }
+                    .min { (refCount[$0] ?? 0) < (refCount[$1] ?? 0) }
+                if let r = refCandidate {
+                    busyInSlot.insert(r)
+                    refCount[r, default: 0] += 1
+                    teams[r].refereeCount += 1
+                }
+                scheduled.append(
+                    VolleyballMatch(
+                        roundNumber: roundNumber,
+                        stage: .round1,
+                        groupIndex: p.groupIndex,
+                        courtNumber: court,
+                        timeSlot: slot,
+                        label: p.label,
+                        teamAIndex: p.a,
+                        teamBIndex: p.b,
+                        refereeTeamIndex: refCandidate
+                    )
+                )
+            }
+            idx += effectiveCourts
+            slot += 1
+        }
+
+        return scheduled
     }
 
     // MARK: - Runde 2: Über-Kreuz- / Schlangen-Setzung (Snake Draft)
@@ -578,9 +882,7 @@ final class VolleyballTournamentStore: ObservableObject {
 
         var rankedByGroup: [[Int]] = []
         for g in 0..<groupCount {
-            let groupTeams = teams.indices
-                .filter { teams[$0].groupIndex == g }
-                .sorted { teams[$0].rankScore > teams[$1].rankScore }
+            let groupTeams = sortedTeamIndices(from: teams.indices.filter { teams[$0].groupIndex == g })
             rankedByGroup.append(groupTeams)
         }
 
@@ -595,7 +897,7 @@ final class VolleyballTournamentStore: ObservableObject {
                     tierTeams.append(rankedByGroup[g][rankPos])
                 }
             }
-            tierTeams.sort { teams[$0].rankScore > teams[$1].rankScore }
+            tierTeams = sortedTeamIndices(from: tierTeams)
 
             for teamIdx in tierTeams {
                 let cycle = snakeCursor / groupCount
@@ -634,12 +936,10 @@ final class VolleyballTournamentStore: ObservableObject {
         var placementMatches: [VolleyballMatch] = []
         let nextRoundNum = (matches.map { $0.roundNumber }.max() ?? 1) + 1
 
-        if groupCount >= 2 {
+        if formatMode == .classicRoundRobin && groupCount >= 2 {
             var rankedByGroup: [[Int]] = []
             for g in 0..<groupCount {
-                let groupTeams = teams.indices
-                    .filter { teams[$0].groupIndex == g }
-                    .sorted { teams[$0].rankScore > teams[$1].rankScore }
+                let groupTeams = sortedTeamIndices(from: teams.indices.filter { teams[$0].groupIndex == g })
                 rankedByGroup.append(groupTeams)
             }
 
@@ -672,7 +972,7 @@ final class VolleyballTournamentStore: ObservableObject {
                 stage: .placement
             )
         } else {
-            let sortedAll = teams.indices.sorted { teams[$0].rankScore > teams[$1].rankScore }
+            let sortedAll = sortedTeamIndices(from: Array(teams.indices))
             var buckets: [(groupIndex: Int?, label: String, teamIndices: [Int])] = []
             var idx = 0
             while idx + 1 < sortedAll.count {
@@ -696,7 +996,7 @@ final class VolleyballTournamentStore: ObservableObject {
         saveState()
     }
 
-    // MARK: - Spielplan-Generator: Mehrere Spielfelder, faire Pausen & Schiedsgericht
+    // MARK: - Spielplan-Generator: Gruppen-Durchmischung, Spielfelder & Schiedsgericht
 
     private func generateFairScheduleForBuckets(
         buckets: [(groupIndex: Int?, label: String, teamIndices: [Int])],
@@ -724,6 +1024,8 @@ final class VolleyballTournamentStore: ObservableObject {
         var scheduled: [VolleyballMatch] = []
         var lastPlayedSlot: [Int: Int] = [:]
         var playCount: [Int: Int] = [:]
+        var lastGroupInSlot: Set<Int> = []
+        var lastGroupOnCourt: [Int: Int] = [:]
         var refCount: [Int: Int] = Dictionary(uniqueKeysWithValues: teams.indices.map { ($0, teams[$0].refereeCount) })
 
         let effectiveCourts = max(1, min(courtCount, teams.count / 2))
@@ -731,9 +1033,9 @@ final class VolleyballTournamentStore: ObservableObject {
 
         while !pending.isEmpty {
             var busyTeamsInThisSlot: Set<Int> = []
+            var groupsUsedInThisSlot: Set<Int> = []
             var slotMatches: [(pair: PendingPair, court: Int)] = []
 
-            // Bis zu `effectiveCourts` parallele Spiele in diesem Zeitslot belegen
             for court in 1...effectiveCourts {
                 let candidateIndices = pending.indices.filter { idx in
                     let p = pending[idx]
@@ -751,11 +1053,32 @@ final class VolleyballTournamentStore: ObservableObject {
                     let restA = timeSlot - lastA
                     let restB = timeSlot - lastB
 
-                    let backToBackPenalty = ((restA == 1) ? -10_000 : 0) + ((restB == 1) ? -10_000 : 0)
-                    let minRestBonus = min(restA, restB) * 120 + (restA + restB) * 20
-                    let balanceBonus = -((playCount[pair.a] ?? 0) + (playCount[pair.b] ?? 0)) * 50
+                    // Keine Doppelbelastung direkt nacheinander
+                    let backToBackPenalty = ((restA == 1) ? -12_000 : 0) + ((restB == 1) ? -12_000 : 0)
 
-                    let score = backToBackPenalty + minRestBonus + balanceBonus
+                    // Gruppen-Durchmischung: Dieselbe Gruppe nicht direkt nacheinander & nicht geballt im selben Slot
+                    var groupMixScore = 0
+                    if let g = pair.groupIndex {
+                        if lastGroupOnCourt[court] == g {
+                            groupMixScore -= 2_500
+                        }
+                        if lastGroupInSlot.contains(g) {
+                            groupMixScore -= 900
+                        }
+                        if groupsUsedInThisSlot.contains(g) {
+                            groupMixScore -= 600
+                        }
+                    }
+
+                    // Bonus, wenn ein Team seinem per Buzzer zugelosten Stammfeld zugeteilt wird
+                    let courtPreferenceBonus =
+                        ((teams[pair.a].assignedCourt == court) ? 180 : 0) +
+                        ((teams[pair.b].assignedCourt == court) ? 180 : 0)
+
+                    let minRestBonus = min(restA, restB) * 140 + (restA + restB) * 25
+                    let balanceBonus = -((playCount[pair.a] ?? 0) + (playCount[pair.b] ?? 0)) * 60
+
+                    let score = backToBackPenalty + groupMixScore + courtPreferenceBonus + minRestBonus + balanceBonus
                     if score > bestScore {
                         bestScore = score
                         bestIdx = idx
@@ -765,10 +1088,15 @@ final class VolleyballTournamentStore: ObservableObject {
                 let chosen = pending.remove(at: bestIdx)
                 busyTeamsInThisSlot.insert(chosen.a)
                 busyTeamsInThisSlot.insert(chosen.b)
+                if let g = chosen.groupIndex {
+                    groupsUsedInThisSlot.insert(g)
+                    lastGroupOnCourt[court] = g
+                }
                 slotMatches.append((pair: chosen, court: court))
             }
 
-            // Schiedsgerichte für alle parallelen Spiele dieses Zeitslots vergeben (keiner pfeift 2 Felder gleichzeitig)
+            lastGroupInSlot = groupsUsedInThisSlot
+
             for item in slotMatches {
                 let chosen = item.pair
                 let candidateRefs = teams.indices.filter { !busyTeamsInThisSlot.contains($0) }
@@ -818,7 +1146,7 @@ final class VolleyballTournamentStore: ObservableObject {
         return scheduled
     }
 
-    // MARK: - Spielsteuerung, Sätze & Timer
+    // MARK: - Spielsteuerung, nachträgliche Korrektur & Timer
 
     func switchToMatch(index: Int) {
         guard matches.indices.contains(index) else { return }
@@ -830,38 +1158,28 @@ final class VolleyballTournamentStore: ObservableObject {
         currentSetSetsA = match.setsA
         currentSetSetsB = match.setsB
         setHistory = match.setResults
+        overrideScoreLock = false
 
         if isTimeMode {
             remainingSeconds = matchDurationMinutes * 60
+            halftimeTriggeredForCurrentMatch = false
+            isHalftimePaused = false
         }
         saveState()
     }
 
     func finishCurrentSet() {
         guard matches.indices.contains(currentMatchIndex) else { return }
+        guard isSetValidToFinish else { return }
+
         setHistory.append([currentSetPointsA, currentSetPointsB])
 
         var match = matches[currentMatchIndex]
-        var tA = teams[match.teamAIndex]
-        var tB = teams[match.teamBIndex]
-
-        tA.pointsWon += currentSetPointsA
-        tA.pointsLost += currentSetPointsB
-        tB.pointsWon += currentSetPointsB
-        tB.pointsLost += currentSetPointsA
-
         if currentSetPointsA > currentSetPointsB {
             currentSetSetsA += 1
-            tA.setsWon += 1
-            tB.setsLost += 1
         } else if currentSetPointsB > currentSetPointsA {
             currentSetSetsB += 1
-            tB.setsWon += 1
-            tA.setsLost += 1
         }
-
-        teams[match.teamAIndex] = tA
-        teams[match.teamBIndex] = tB
 
         match.setsA = currentSetSetsA
         match.setsB = currentSetSetsB
@@ -871,33 +1189,103 @@ final class VolleyballTournamentStore: ObservableObject {
         if isTimeMode || currentSetSetsA == setsNeededToWin || currentSetSetsB == setsNeededToWin {
             stopTimer()
             match.isFinished = true
-
-            var finalA = teams[match.teamAIndex]
-            var finalB = teams[match.teamBIndex]
-            finalA.matchesPlayed += 1
-            finalB.matchesPlayed += 1
-
-            if currentSetSetsA > currentSetSetsB {
-                finalA.matchesWon += 1
-                finalB.matchesLost += 1
-            } else if currentSetSetsB > currentSetSetsA {
-                finalB.matchesWon += 1
-                finalA.matchesLost += 1
-            }
-
-            teams[match.teamAIndex] = finalA
-            teams[match.teamBIndex] = finalB
             matches[currentMatchIndex] = match
+            recalculateAllStandings()
 
             if let nextIdx = matches.firstIndex(where: { !$0.isFinished }) {
                 switchToMatch(index: nextIdx)
             }
         } else {
             matches[currentMatchIndex] = match
+            recalculateAllStandings()
             currentSetPointsA = 0
             currentSetPointsB = 0
+            overrideScoreLock = false
         }
         saveState()
+    }
+
+    /// Nachträgliche Korrektur eines beliebigen Spiels (inkl. Neuberechnung der kompletten Tabelle!)
+    func updateMatchResult(matchIndex: Int, newSetResults: [[Int]], markFinished: Bool) {
+        guard matches.indices.contains(matchIndex) else { return }
+        var match = matches[matchIndex]
+
+        let validSets = newSetResults.filter { $0.count == 2 }
+        var setsA = 0
+        var setsB = 0
+        for s in validSets {
+            if s[0] > s[1] { setsA += 1 }
+            else if s[1] > s[0] { setsB += 1 }
+        }
+
+        match.setResults = validSets
+        match.setsA = setsA
+        match.setsB = setsB
+        match.isFinished = markFinished
+        matches[matchIndex] = match
+
+        recalculateAllStandings()
+
+        if matchIndex == currentMatchIndex {
+            currentSetSetsA = setsA
+            currentSetSetsB = setsB
+            setHistory = validSets
+            currentSetPointsA = 0
+            currentSetPointsB = 0
+            overrideScoreLock = false
+        }
+        saveState()
+    }
+
+    /// Berechnet sämtliche Team-Statistiken aus allen gespeicherten Satzergebnissen sauber neu
+    func recalculateAllStandings() {
+        for idx in teams.indices {
+            teams[idx].matchesPlayed = 0
+            teams[idx].matchesWon = 0
+            teams[idx].matchesLost = 0
+            teams[idx].setsWon = 0
+            teams[idx].setsLost = 0
+            teams[idx].pointsWon = 0
+            teams[idx].pointsLost = 0
+        }
+
+        for match in matches {
+            let idxA = match.teamAIndex
+            let idxB = match.teamBIndex
+            guard teams.indices.contains(idxA), teams.indices.contains(idxB) else { continue }
+
+            var mSetsA = 0
+            var mSetsB = 0
+
+            for s in match.setResults where s.count == 2 {
+                teams[idxA].pointsWon += s[0]
+                teams[idxA].pointsLost += s[1]
+                teams[idxB].pointsWon += s[1]
+                teams[idxB].pointsLost += s[0]
+
+                if s[0] > s[1] {
+                    mSetsA += 1
+                    teams[idxA].setsWon += 1
+                    teams[idxB].setsLost += 1
+                } else if s[1] > s[0] {
+                    mSetsB += 1
+                    teams[idxB].setsWon += 1
+                    teams[idxA].setsLost += 1
+                }
+            }
+
+            if match.isFinished {
+                teams[idxA].matchesPlayed += 1
+                teams[idxB].matchesPlayed += 1
+                if mSetsA > mSetsB {
+                    teams[idxA].matchesWon += 1
+                    teams[idxB].matchesLost += 1
+                } else if mSetsB > mSetsA {
+                    teams[idxB].matchesWon += 1
+                    teams[idxA].matchesLost += 1
+                }
+            }
+        }
     }
 
     func endTournament() {
@@ -909,6 +1297,8 @@ final class VolleyballTournamentStore: ObservableObject {
         currentMatchIndex = 0
         resetMatchState()
         remainingSeconds = matchDurationMinutes * 60
+        halftimeTriggeredForCurrentMatch = false
+        isHalftimePaused = false
         UserDefaults.standard.removeObject(forKey: storageKey)
     }
 
@@ -918,18 +1308,43 @@ final class VolleyballTournamentStore: ObservableObject {
         currentSetSetsA = 0
         currentSetSetsB = 0
         setHistory.removeAll()
+        overrideScoreLock = false
     }
+
+    // MARK: - Zeitspiel-Timer inkl. Halbzeit-Wechsel & Buzzer-Ton
 
     func startTimer() {
         guard !timerActive else { return }
+        if remainingSeconds <= 0 {
+            remainingSeconds = matchDurationMinutes * 60
+            halftimeTriggeredForCurrentMatch = false
+        }
+        isHalftimePaused = false
         timerActive = true
+
+        let totalSeconds = matchDurationMinutes * 60
+        let halfSeconds = totalSeconds / 2
+
         timerCancellable = Timer.publish(every: 1.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self else { return }
                 if self.remainingSeconds > 0 {
                     self.remainingSeconds -= 1
+
+                    // Halbzeit erreicht (z. B. 04:00 bei 08:00 Gesamtzeit): Buzzerton + automatische Wechsel-Pause
+                    if self.enableHalftimeSwitch &&
+                        !self.halftimeTriggeredForCurrentMatch &&
+                        halfSeconds > 0 &&
+                        self.remainingSeconds == halfSeconds {
+                        self.halftimeTriggeredForCurrentMatch = true
+                        self.isHalftimePaused = true
+                        self.buzzerSound.play()
+                        self.stopTimer()
+                    }
                 } else {
+                    // Spielzeit abgelaufen: Abschluss-Buzzerton
+                    self.buzzerSound.play()
                     self.stopTimer()
                 }
             }
@@ -958,7 +1373,7 @@ final class VolleyballTournamentStore: ObservableObject {
     func generateExportText() -> String {
         var report = "=== VOLLEYBALL TURNIER-ERGEBNISSE (\(courtCount) Spielfeld\(courtCount == 1 ? "" : "er")) ===\n\n"
         report += "--- AKTUELLE TABELLE ---\n"
-        let sortedTeams = teams.sorted { $0.rankScore > $1.rankScore }
+        let sortedTeams = sortedStandingsTeams()
         for (index, team) in sortedTeams.enumerated() {
             let grp = team.groupIndex.map { " [\(groupName(for: $0))]" } ?? ""
             report += "\(index + 1). \(team.name)\(grp) | Sp: \(team.matchesPlayed) | S: \(team.matchesWon):\(team.matchesLost) | Sätze: \(team.setsWon):\(team.setsLost) | Pkt: \(team.pointsWon):\(team.pointsLost)\n"
